@@ -1,0 +1,7 @@
+{
+  "name": "totem-scaffold",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "vue-vite"
+}

@@ -7,3 +7,19 @@ android/app/build/
 .superpowers/
 dist/
 www/
+
+# Ionic / Vite
+.angular/
+.ionic/
+build/
+.vite/
+*.log
+
+# Capacitor iOS
+ios/App/Pods/
+ios/App/Podfile.lock
+ios/.gitignore
+
+# Supabase
+supabase/.branches/
+supabase/.temp/
