@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+.env
+.env.local
+ios/App/build/
+android/app/build/
+.superpowers/
+dist/
+www/
