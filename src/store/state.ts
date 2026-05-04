@@ -1,9 +1,9 @@
 import { reactive } from 'vue';
-import { GROUPS, TRACKS } from '@/data/mock';
-import type { Group, ThemeKey, Track } from '@/types';
+import { TRACKS } from '@/data/mock';
+import type { ThemeKey, Track } from '@/types';
 
 interface AppState {
-  groups: Group[];
+  /** Mock track data for demo / activity feed fallback. Real tracks live in the playlists Pinia store. */
   tracks: Track[];
   meId: string;
   theme: ThemeKey;
@@ -11,13 +11,16 @@ interface AppState {
 }
 
 export const state = reactive<AppState>({
-  groups: [...GROUPS],
   tracks: [...TRACKS],
   meId: 'you',
   theme: 'midnight',
   accent: '#d62e2e',
 });
 
+// v0: reactions are an ephemeral client-only concept (no DB schema).
+// This mutates whichever Track instance carries `trackId` in state.tracks.
+// Real tracks loaded from the backend won't match — taps are visual no-ops on
+// real tracks until v1 introduces a reactions table.
 export function toggleReaction(trackId: string, emoji: string) {
   const t = state.tracks.find((x) => x.id === trackId);
   if (!t) return;
@@ -37,8 +40,4 @@ export function toggleReaction(trackId: string, emoji: string) {
   } else {
     t.reactions = [...t.reactions, { e: emoji, by: [me] }];
   }
-}
-
-export function addGroup(g: Group) {
-  state.groups = [g, ...state.groups];
 }

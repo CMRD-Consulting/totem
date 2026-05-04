@@ -36,6 +36,7 @@ export interface Group {
   id: string;
   name: string;
   code: string;
+  inviteToken: string;
   members: string[];
   tracks: number;
   sigil: [number, number, number];

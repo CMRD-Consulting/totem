@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { IonPage } from '@ionic/vue';
+import { IonPage, onIonViewWillEnter } from '@ionic/vue';
+import { Share } from '@capacitor/share';
+import { Capacitor } from '@capacitor/core';
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Icon from '@/components/Icon.vue';
@@ -9,20 +11,33 @@ import ServiceGlyph from '@/components/ServiceGlyph.vue';
 import Sigil from '@/components/Sigil.vue';
 import TopBar from '@/components/TopBar.vue';
 import { pillBtn } from '@/components/pillBtn';
-import { friendsById, SERVICES } from '@/data/mock';
-import { state } from '@/store/state';
+import { SERVICES } from '@/data/mock';
+import { usePlaylistsStore } from '@/stores/playlists';
+import { usersById } from '@/store/users';
 import type { ServiceKey } from '@/types';
 
 const router = useRouter();
 const route = useRoute();
+const playlists = usePlaylistsStore();
 const copied = ref(false);
 
 const group = computed(() => {
   const id = route.params.groupId as string;
-  return state.groups.find((g) => g.id === id) ?? state.groups[0];
+  return playlists.groups.find((g) => g.id === id) ?? playlists.groups[0];
 });
 
-const cells = computed(() => buildQR(group.value.id));
+const inviteUrl = computed(() => {
+  const token = group.value?.inviteToken ?? '';
+  const origin =
+    typeof window !== 'undefined' ? window.location.origin : 'https://totem.cmrd.dev';
+  return `${origin}/i/${token}`;
+});
+
+onIonViewWillEnter(async () => {
+  if (!playlists.loaded) await playlists.loadList().catch(() => {});
+});
+
+const cells = computed(() => buildQR(group.value?.id ?? ''));
 const N = 21;
 
 function buildQR(seed: string): boolean[][] {
@@ -58,13 +73,37 @@ function buildQR(seed: string): boolean[][] {
   return grid;
 }
 
-function onCopy() {
-  copied.value = true;
-  setTimeout(() => (copied.value = false), 1500);
+async function onCopy() {
+  try {
+    await navigator.clipboard.writeText(inviteUrl.value);
+    copied.value = true;
+    setTimeout(() => (copied.value = false), 1500);
+  } catch {
+    // Older browsers / blocked clipboards: fall through silently. The QR + code
+    // are still visible on-screen.
+  }
+}
+
+async function onShare() {
+  if (!group.value) return;
+  const payload = {
+    title: `Join "${group.value.name}" on Totem`,
+    url: inviteUrl.value,
+    dialogTitle: 'Share invite',
+  };
+  if (Capacitor.isNativePlatform()) {
+    await Share.share(payload);
+  } else if (typeof navigator !== 'undefined' && 'share' in navigator) {
+    await navigator.share({ title: payload.title, url: payload.url }).catch(() => {});
+  } else {
+    await onCopy();
+  }
 }
 
 const serviceCount = (k: ServiceKey) =>
-  group.value.members.filter((m) => friendsById[m]?.service === k).length;
+  group.value
+    ? group.value.members.filter((m) => usersById[m]?.service === k).length
+    : 0;
 </script>
 
 <template>
@@ -81,13 +120,13 @@ const serviceCount = (k: ServiceKey) =>
     >
       <TopBar title="invite friends">
         <template #left>
-          <IconButton name="close" @click="router.push(`/p/${group.id}`)" />
+          <IconButton name="close" @click="router.push(`/p/${group?.id}`)" />
         </template>
       </TopBar>
 
       <ScreenScroll>
         <div style="padding: 8px 22px 0; text-align: center">
-          <div style="display: inline-block">
+          <div v-if="group" style="display: inline-block">
             <Sigil :seeds="group.trackSeeds" :hues="group.sigil" :size="68" :radius="12" />
           </div>
           <div
@@ -98,7 +137,7 @@ const serviceCount = (k: ServiceKey) =>
               marginTop: '12px',
               letterSpacing: '-0.3px',
             }"
-          >{{ group.name }}</div>
+          >{{ group?.name }}</div>
           <div
             :style="{
               fontFamily: 'Inter',
@@ -158,9 +197,9 @@ const serviceCount = (k: ServiceKey) =>
                 color: 'var(--ink)',
                 letterSpacing: '0.5px',
               }"
-            >{{ group.code }}</div>
+            >{{ group?.code }}</div>
             <div style="font-family: Inter; font-size: 11px; color: var(--muted)">
-              expires in 24h · {{ group.members.length }} friends in this group
+              expires in 24h · {{ group?.members.length ?? 0 }} friends in this group
             </div>
           </div>
         </div>
@@ -175,7 +214,7 @@ const serviceCount = (k: ServiceKey) =>
               <Icon name="copy" :size="16" /> copy link
             </template>
           </button>
-          <button :style="{ ...pillBtn(false), height: '44px', padding: '0 16px' }">
+          <button @click="onShare" :style="{ ...pillBtn(false), height: '44px', padding: '0 16px' }">
             <Icon name="share" :size="16" />
             <span style="margin-left: 4px">share…</span>
           </button>

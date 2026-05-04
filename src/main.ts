@@ -1,5 +1,7 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
+import { App as CapApp } from '@capacitor/app'
+import { Capacitor } from '@capacitor/core'
 import App from './App.vue'
 import router from './router';
 
@@ -43,3 +45,20 @@ const app = createApp(App)
 router.isReady().then(() => {
   app.mount('#app');
 });
+
+// Deep links: when the app is opened via a Universal Link like
+// https://totem.cmrd.dev/i/abc123, route the path into Vue Router so the
+// JoinPage handles the invite. Native only — the web build already routes
+// these paths normally.
+if (Capacitor.isNativePlatform()) {
+  CapApp.addListener('appUrlOpen', (event) => {
+    try {
+      const url = new URL(event.url);
+      if (url.pathname.startsWith('/i/') || url.pathname.startsWith('/p/')) {
+        router.push(url.pathname + url.search);
+      }
+    } catch {
+      // Ignore non-URL deep-link payloads.
+    }
+  });
+}

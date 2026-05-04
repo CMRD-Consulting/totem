@@ -10,18 +10,25 @@ import IconButton from '@/components/IconButton.vue';
 import ScreenScroll from '@/components/ScreenScroll.vue';
 import ServiceGlyph from '@/components/ServiceGlyph.vue';
 import TopBar from '@/components/TopBar.vue';
-import { friendsById, SERVICES } from '@/data/mock';
+import { SERVICES } from '@/data/mock';
 import { state, toggleReaction } from '@/store/state';
+import { usePlaylistsStore } from '@/stores/playlists';
+import { usersById } from '@/store/users';
 import type { ServiceKey } from '@/types';
 
 const router = useRouter();
 const route = useRoute();
+const playlists = usePlaylistsStore();
+
+const groupId = computed(() => route.params.groupId as string);
+const trackId = computed(() => route.params.trackId as string);
 
 const track = computed(() => {
-  const id = route.params.trackId as string;
-  return state.tracks.find((t) => t.id === id) ?? state.tracks[0];
+  // Prefer the live track from the playlists store; fall back to mock for demo data.
+  const real = playlists.tracksByPlaylistId[groupId.value]?.find((t) => t.id === trackId.value);
+  return real ?? state.tracks.find((t) => t.id === trackId.value) ?? state.tracks[0];
 });
-const adder = computed(() => friendsById[track.value.adder]);
+const adder = computed(() => usersById[track.value.adder]);
 const myReactions = computed(
   () =>
     new Set(
@@ -33,7 +40,6 @@ const myReactions = computed(
 
 const quickReacts = ['🔥', '❤️', '😭', '👑', '💔', '🌙'];
 const services: ServiceKey[] = ['spotify', 'apple', 'youtube'];
-const groupId = computed(() => route.params.groupId as string);
 </script>
 
 <template>
@@ -226,7 +232,7 @@ const groupId = computed(() => route.params.groupId as string);
                   color: 'var(--muted)',
                 }"
               >
-                {{ r.by.slice(0, 2).map((id) => friendsById[id]?.name).join(', ') }}
+                {{ r.by.slice(0, 2).map((id) => usersById[id]?.name).join(', ') }}
                 <template v-if="r.by.length > 2">+{{ r.by.length - 2 }}</template>
               </span>
             </div>

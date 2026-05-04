@@ -67,6 +67,7 @@ function rowToGroup(row: PlaylistRow, meId: string | undefined): Group {
     id: row.id,
     name: row.name,
     code: 'TOTEM-' + row.invite_token.slice(0, 6).toUpperCase(),
+    inviteToken: row.invite_token,
     members: ordered,
     tracks: row.tracks[0]?.count ?? 0,
     sigil: [

@@ -9,6 +9,7 @@ import InvitePage from '@/views/InvitePage.vue';
 import MirrorPage from '@/views/MirrorPage.vue';
 import ShareSheetPage from '@/views/ShareSheetPage.vue';
 import SignInPage from '@/views/SignInPage.vue';
+import JoinPage from '@/views/JoinPage.vue';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -33,6 +34,7 @@ const routes: Array<RouteRecordRaw> = [
     name: 'share-sheet',
     component: ShareSheetPage,
   },
+  { path: '/i/:token', name: 'join', component: JoinPage },
   { path: '/settings', redirect: '/' },
 ];
 
