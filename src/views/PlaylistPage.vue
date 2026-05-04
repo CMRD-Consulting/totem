@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { IonPage } from '@ionic/vue';
-import { computed, ref } from 'vue';
+import { IonPage, onIonViewWillEnter } from '@ionic/vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import ActivityRow from '@/components/ActivityRow.vue';
 import Avatar from '@/components/Avatar.vue';
@@ -13,16 +13,28 @@ import Sigil from '@/components/Sigil.vue';
 import TopBar from '@/components/TopBar.vue';
 import TrackRow from '@/components/TrackRow.vue';
 import { pillBtn } from '@/components/pillBtn';
-import { ACTIVITY, friendsById, SERVICES } from '@/data/mock';
-import { state } from '@/store/state';
+import { ACTIVITY, SERVICES } from '@/data/mock';
+import { usePlaylistsStore } from '@/stores/playlists';
+import { usersById } from '@/store/users';
 
 const router = useRouter();
 const route = useRoute();
+const playlists = usePlaylistsStore();
 const tab = ref<'songs' | 'activity' | 'members'>('songs');
 
-const group = computed(() => {
-  const id = route.params.groupId as string;
-  return state.groups.find((g) => g.id === id) ?? state.groups[0];
+const groupId = computed(() => route.params.groupId as string);
+const group = computed(
+  () => playlists.groups.find((g) => g.id === groupId.value) ?? playlists.groups[0],
+);
+const tracks = computed(() => playlists.tracksByPlaylistId[groupId.value] ?? []);
+
+onIonViewWillEnter(async () => {
+  if (!playlists.loaded) await playlists.loadList().catch(() => {});
+  if (groupId.value) await playlists.loadTracks(groupId.value).catch(() => {});
+});
+
+watch(groupId, async (id) => {
+  if (id) await playlists.loadTracks(id).catch(() => {});
 });
 </script>
 
@@ -197,11 +209,26 @@ const group = computed(() => {
         <!-- Songs -->
         <template v-if="tab === 'songs'">
           <TrackRow
-            v-for="t in state.tracks"
+            v-for="t in tracks"
             :key="t.id"
             :track="t"
             @tap="router.push(`/p/${group.id}/t/${t.id}`)"
           />
+          <div
+            v-if="tracks.length === 0"
+            :style="{
+              padding: '30px 22px',
+              textAlign: 'center',
+              fontFamily: '&quot;Instrument Serif&quot;, Georgia, serif',
+              fontStyle: 'italic',
+              fontSize: '17px',
+              color: 'var(--muted)',
+              lineHeight: 1.4,
+            }"
+          >
+            no songs yet — <br />
+            paste a link to start the mixtape.
+          </div>
         </template>
 
         <!-- Activity -->
@@ -226,7 +253,7 @@ const group = computed(() => {
                   color: 'var(--ink)',
                 }"
               >
-                {{ friendsById[m]?.name }}
+                {{ usersById[m]?.name }}
                 <span v-if="m === 'you'" style="color: var(--muted); font-weight: 400">
                   (you)
                 </span>
@@ -243,11 +270,11 @@ const group = computed(() => {
                 }"
               >
                 <ServiceGlyph
-                  :service="friendsById[m]?.service ?? 'spotify'"
+                  :service="usersById[m]?.service ?? 'spotify'"
                   :size="10"
-                  :color="SERVICES[friendsById[m]?.service ?? 'spotify'].color"
+                  :color="SERVICES[usersById[m]?.service ?? 'spotify'].color"
                 />
-                <span>listens on {{ SERVICES[friendsById[m]?.service ?? 'spotify'].short }}</span>
+                <span>listens on {{ SERVICES[usersById[m]?.service ?? 'spotify'].short }}</span>
               </div>
             </div>
             <Icon name="more" :size="16" color="var(--muted-2)" />

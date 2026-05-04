@@ -59,7 +59,7 @@ const groupId = computed(() => route.params.groupId as string);
 
       <ScreenScroll :pad-bottom="140">
         <div style="padding: 12px 28px 8px; display: flex; justify-content: center">
-          <AlbumArt :seed="track.seed" :size="240" :radius="14" />
+          <AlbumArt :seed="track.seed" :url="track.artworkUrl" :size="240" :radius="14" />
         </div>
         <div style="padding: 20px 28px 0; text-align: center">
           <div

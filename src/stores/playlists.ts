@@ -1,8 +1,9 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
+import { env } from '@/lib/env';
 import { supabase } from '@/lib/supabase';
 import { registerProfile } from '@/store/users';
-import type { Group } from '@/types';
+import type { Group, ServiceKey, Track } from '@/types';
 
 interface PlaylistRow {
   id: string;
@@ -14,15 +15,51 @@ interface PlaylistRow {
   tracks: { count: number }[];
 }
 
+interface PlaylistTrackRow {
+  id: string;
+  position: number;
+  added_at: string;
+  added_by: string;
+  track: {
+    id: string;
+    title: string;
+    artist: string;
+    album: string | null;
+    artwork_url: string | null;
+    spotify_id: string | null;
+    apple_music_id: string | null;
+    youtube_music_id: string | null;
+  };
+  added_by_profile: { display_name: string } | null;
+}
+
 function hashSeed(s: string, salt: number): number {
   let h = salt;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
   return h;
 }
 
+function relTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return 'now';
+  const m = Math.floor(ms / 60_000);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  if (d === 1) return 'yest';
+  return `${d}d`;
+}
+
+function pickService(t: PlaylistTrackRow['track']): ServiceKey {
+  if (t.spotify_id) return 'spotify';
+  if (t.apple_music_id) return 'apple';
+  if (t.youtube_music_id) return 'youtube';
+  return 'spotify';
+}
+
 function rowToGroup(row: PlaylistRow, meId: string | undefined): Group {
   const memberIds = row.members.map((m) => m.user_id);
-  // Hoist current user to the front so the design's "filter !== 'you'" logic stays consistent.
   const ordered = meId
     ? [meId, ...memberIds.filter((id) => id !== meId)]
     : memberIds;
@@ -40,8 +77,24 @@ function rowToGroup(row: PlaylistRow, meId: string | undefined): Group {
   };
 }
 
+function rowToTrack(row: PlaylistTrackRow): Track {
+  return {
+    id: row.id,
+    title: row.track.title,
+    artist: row.track.artist,
+    album: row.track.album ?? '',
+    adder: row.added_by,
+    added: relTime(row.added_at),
+    service: pickService(row.track),
+    reactions: [],
+    seed: hashSeed(row.track.id, 0),
+    artworkUrl: row.track.artwork_url ?? undefined,
+  };
+}
+
 export const usePlaylistsStore = defineStore('playlists', () => {
   const groups = ref<Group[]>([]);
+  const tracksByPlaylistId = ref<Record<string, Track[]>>({});
   const loaded = ref(false);
   const loading = ref(false);
   const error = ref<string | null>(null);
@@ -85,6 +138,31 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     }
   }
 
+  async function loadTracks(playlistId: string) {
+    const { data, error: err } = await supabase
+      .from('playlist_tracks')
+      .select(
+        `
+        id, position, added_at, added_by,
+        track:tracks ( id, title, artist, album, artwork_url, spotify_id, apple_music_id, youtube_music_id ),
+        added_by_profile:profiles!playlist_tracks_added_by_fkey ( display_name )
+      `,
+      )
+      .eq('playlist_id', playlistId)
+      .order('position', { ascending: true });
+
+    if (err) throw err;
+    const rows = (data ?? []) as unknown as PlaylistTrackRow[];
+
+    for (const row of rows) {
+      if (row.added_by_profile?.display_name) {
+        registerProfile(row.added_by, row.added_by_profile.display_name);
+      }
+    }
+
+    tracksByPlaylistId.value[playlistId] = rows.map(rowToTrack);
+  }
+
   async function create(name: string, description: string | null = null) {
     const { data, error: err } = await supabase.rpc('create_playlist', {
       p_name: name,
@@ -104,8 +182,24 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     return data?.[0] as { playlist_id: string; name: string } | undefined;
   }
 
+  async function ingestUrl(playlistId: string, url: string) {
+    const { data: sess } = await supabase.auth.getSession();
+    if (!sess.session) throw new Error('Not signed in');
+    const res = await fetch(`${env.supabaseUrl}/functions/v1/ingest-track`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${sess.session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ playlist_id: playlistId, url }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    await loadTracks(playlistId);
+  }
+
   function reset() {
     groups.value = [];
+    tracksByPlaylistId.value = {};
     loaded.value = false;
     error.value = null;
   }
@@ -114,13 +208,16 @@ export const usePlaylistsStore = defineStore('playlists', () => {
 
   return {
     groups,
+    tracksByPlaylistId,
     loaded,
     loading,
     error,
     isEmpty,
     loadList,
+    loadTracks,
     create,
     joinByToken,
+    ingestUrl,
     reset,
   };
 });

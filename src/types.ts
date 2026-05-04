@@ -29,6 +29,7 @@ export interface Track {
   service: ServiceKey;
   reactions: Reaction[];
   seed: number;
+  artworkUrl?: string;
 }
 
 export interface Group {

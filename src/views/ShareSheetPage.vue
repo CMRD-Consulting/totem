@@ -2,31 +2,47 @@
 import { IonPage } from '@ionic/vue';
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import AlbumArt from '@/components/AlbumArt.vue';
 import Avatar from '@/components/Avatar.vue';
 import Icon from '@/components/Icon.vue';
-import ServiceGlyph from '@/components/ServiceGlyph.vue';
 import Sigil from '@/components/Sigil.vue';
-import { SERVICES, TRACKS } from '@/data/mock';
-import { state } from '@/store/state';
+import { usePlaylistsStore } from '@/stores/playlists';
 
 const router = useRouter();
 const route = useRoute();
+const playlists = usePlaylistsStore();
+const url = ref('');
 const note = ref('');
+const busy = ref(false);
 const saved = ref(false);
+const error = ref<string | null>(null);
 
-const initialId = computed(() => (route.params.groupId as string) || state.groups[0].id);
-const picked = ref(initialId.value);
+const groupId = computed(
+  () => (route.params.groupId as string) || playlists.groups[0]?.id || '',
+);
+const group = computed(() => playlists.groups.find((g) => g.id === groupId.value));
 
-const sample = TRACKS[7]; // "Don't Save Me" — HAIM
+const isLikelyUrl = computed(() => {
+  const trimmed = url.value.trim();
+  return /^https?:\/\//i.test(trimmed);
+});
 
 function close() {
-  router.push(`/p/${picked.value}`);
+  router.back();
 }
 
-function send() {
-  saved.value = true;
-  setTimeout(() => router.push(`/p/${picked.value}`), 700);
+async function send() {
+  if (!isLikelyUrl.value || !groupId.value || busy.value) return;
+  busy.value = true;
+  error.value = null;
+  try {
+    await playlists.ingestUrl(groupId.value, url.value.trim());
+    saved.value = true;
+    setTimeout(() => router.replace(`/p/${groupId.value}`), 700);
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    busy.value = false;
+  }
 }
 </script>
 
@@ -40,56 +56,12 @@ function send() {
         display: flex;
         flex-direction: column;
         justify-content: flex-end;
+        background: rgba(0, 0, 0, 0.45);
         animation: totem-fade-in 0.18s ease;
       "
     >
-      <!-- Faux Spotify backdrop -->
-      <div style="position: absolute; inset: 0; z-index: 0" @click="close">
-        <div
-          style="
-            width: 100%;
-            height: 100%;
-            background: #121212;
-            color: #fff;
-            padding: calc(60px + var(--safe-top)) 18px 0;
-            box-sizing: border-box;
-            overflow: hidden;
-          "
-        >
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px">
-            <ServiceGlyph service="spotify" :size="20" :color="SERVICES.spotify.color" />
-            <span style="font-family: Inter; font-weight: 700; font-size: 14px">Spotify</span>
-          </div>
-          <div
-            style="
-              width: 200px;
-              height: 200px;
-              margin: 20px auto;
-              border-radius: 6px;
-              background: linear-gradient(135deg, #ffb672, #c9304e);
-            "
-          />
-          <div
-            style="
-              text-align: center;
-              font-family: Inter;
-              font-size: 18px;
-              font-weight: 700;
-              margin-top: 18px;
-            "
-          >Don't Save Me</div>
-          <div
-            style="
-              text-align: center;
-              font-family: Inter;
-              font-size: 13px;
-              color: rgba(255, 255, 255, 0.6);
-              margin-top: 4px;
-            "
-          >HAIM</div>
-        </div>
-        <div style="position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45)" />
-      </div>
+      <!-- Backdrop closes the sheet -->
+      <div style="position: absolute; inset: 0; z-index: 0" @click="close" />
 
       <!-- Sheet -->
       <div
@@ -147,14 +119,14 @@ function send() {
                 fontSize: '14px',
                 color: 'var(--ink)',
               }"
-            >Add to Totem</div>
+            >Add a song</div>
             <div
               :style="{
                 fontFamily: 'Inter',
                 fontSize: '11.5px',
                 color: 'var(--muted)',
               }"
-            >From Spotify</div>
+            >paste a Spotify, Apple Music, or YouTube Music link</div>
           </div>
           <button
             @click="close"
@@ -164,8 +136,9 @@ function send() {
           </button>
         </div>
 
-        <!-- Track preview -->
+        <!-- Target group preview -->
         <div
+          v-if="group"
           style="
             margin: 0 16px;
             padding: 10px 12px;
@@ -177,83 +150,65 @@ function send() {
             gap: 12px;
           "
         >
-          <AlbumArt :seed="sample.seed" :size="48" :radius="6" />
+          <Sigil :seeds="group.trackSeeds" :hues="group.sigil" :size="40" :radius="8" />
           <div style="flex: 1; min-width: 0">
+            <div
+              :style="{
+                fontFamily: '&quot;JetBrains Mono&quot;, monospace',
+                fontSize: '10px',
+                color: 'var(--muted-2)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.6px',
+              }"
+            >sending to</div>
             <div
               :style="{
                 fontFamily: 'Inter',
                 fontWeight: 600,
                 fontSize: '14px',
                 color: 'var(--ink)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
+                marginTop: '1px',
               }"
-            >{{ sample.title }}</div>
-            <div style="font-family: Inter; font-size: 12px; color: var(--muted)">
-              {{ sample.artist }}
-            </div>
+            >{{ group.name }}</div>
           </div>
-          <ServiceGlyph service="spotify" :size="18" :color="SERVICES.spotify.color" />
+          <span
+            :style="{
+              fontFamily: 'Inter',
+              fontSize: '11px',
+              color: 'var(--muted)',
+              fontVariantNumeric: 'tabular-nums',
+            }"
+          >{{ group.members.length }} friends</span>
         </div>
 
-        <!-- Pick group -->
-        <div
-          :style="{
-            padding: '16px 20px 6px',
-            fontFamily: '&quot;Instrument Serif&quot;, Georgia, serif',
-            fontStyle: 'italic',
-            fontSize: '14px',
-            color: 'var(--muted)',
-          }"
-        >send to</div>
-        <div style="padding: 0 16px">
-          <button
-            v-for="g in state.groups"
-            :key="g.id"
-            @click="picked = g.id"
+        <!-- URL input -->
+        <div style="padding: 16px 16px 0">
+          <input
+            v-model="url"
+            type="url"
+            inputmode="url"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            placeholder="https://open.spotify.com/track/…"
             :style="{
               all: 'unset',
-              cursor: 'pointer',
-              width: '100%',
               boxSizing: 'border-box',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '10px 12px',
-              borderRadius: '10px',
-              background: picked === g.id ? 'var(--accent-soft)' : 'transparent',
-              border:
-                picked === g.id
-                  ? '1px solid var(--accent)'
-                  : '1px solid transparent',
-              marginBottom: '4px',
+              width: '100%',
+              padding: '14px 16px',
+              borderRadius: '14px',
+              background: 'var(--surface)',
+              border: '0.5px solid var(--divider)',
+              fontFamily: '&quot;JetBrains Mono&quot;, ui-monospace, monospace',
+              fontSize: '13px',
+              color: 'var(--ink)',
             }"
-          >
-            <Sigil :seeds="g.trackSeeds" :hues="g.sigil" :size="32" :radius="6" />
-            <div style="flex: 1; text-align: left">
-              <div
-                :style="{
-                  fontFamily: 'Inter',
-                  fontWeight: 600,
-                  fontSize: '14px',
-                  color: 'var(--ink)',
-                }"
-              >{{ g.name }}</div>
-              <div
-                :style="{
-                  fontFamily: 'Inter',
-                  fontSize: '11.5px',
-                  color: 'var(--muted)',
-                }"
-              >{{ g.members.length }} friends</div>
-            </div>
-            <Icon v-if="picked === g.id" name="check" :size="18" color="var(--accent)" />
-          </button>
+            @keyup.enter="send"
+          />
         </div>
 
-        <!-- Note -->
-        <div style="padding: 10px 16px 0">
+        <!-- Optional note -->
+        <div style="padding: 8px 16px 0">
           <div
             style="
               display: flex;
@@ -280,6 +235,21 @@ function send() {
           </div>
         </div>
 
+        <!-- Error -->
+        <div
+          v-if="error"
+          :style="{
+            margin: '12px 16px 0',
+            padding: '10px 12px',
+            borderRadius: '10px',
+            background: 'var(--accent-soft)',
+            border: '1px solid var(--accent)',
+            fontFamily: 'Inter',
+            fontSize: '12px',
+            color: 'var(--accent)',
+          }"
+        >{{ error }}</div>
+
         <!-- Send -->
         <div
           style="
@@ -288,16 +258,21 @@ function send() {
           "
         >
           <button
+            :disabled="!isLikelyUrl || busy || saved"
             @click="send"
             :style="{
               all: 'unset',
-              cursor: saved ? 'default' : 'pointer',
+              cursor: !isLikelyUrl || busy ? 'not-allowed' : 'pointer',
               width: '100%',
               boxSizing: 'border-box',
               height: '50px',
               borderRadius: '14px',
-              background: saved ? '#5A7B4F' : 'var(--accent)',
-              color: '#fff',
+              background: saved
+                ? '#5A7B4F'
+                : !isLikelyUrl
+                  ? 'var(--chip-strong)'
+                  : 'var(--accent)',
+              color: !isLikelyUrl && !saved ? 'var(--muted-2)' : '#fff',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -310,8 +285,9 @@ function send() {
           >
             <template v-if="saved">
               <Icon name="check" :size="18" />
-              sent to {{ state.groups.find((g) => g.id === picked)?.name }}
+              sent to {{ group?.name }}
             </template>
+            <template v-else-if="busy">resolving…</template>
             <template v-else>send to group</template>
           </button>
         </div>

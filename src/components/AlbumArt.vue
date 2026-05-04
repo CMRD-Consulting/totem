@@ -6,6 +6,7 @@ const props = withDefaults(
     seed: number;
     size?: number;
     radius?: number;
+    url?: string;
   }>(),
   { size: 44, radius: 6 },
 );
@@ -19,7 +20,23 @@ const sy = computed(() => (props.seed * 13) % 100);
 </script>
 
 <template>
+  <img
+    v-if="url"
+    :src="url"
+    loading="lazy"
+    :style="{
+      width: size + 'px',
+      height: size + 'px',
+      borderRadius: radius + 'px',
+      flexShrink: 0,
+      boxShadow:
+        'inset 0 0 0 0.5px rgba(0,0,0,0.15), 0 1px 2px rgba(0,0,0,0.08)',
+      objectFit: 'cover',
+      display: 'block',
+    }"
+  />
   <div
+    v-else
     :style="{
       width: size + 'px',
       height: size + 'px',

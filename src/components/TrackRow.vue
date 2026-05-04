@@ -49,7 +49,7 @@ function onReact(e: MouseEvent, emoji: string) {
       borderBottom: '0.5px solid var(--divider)',
     }"
   >
-    <AlbumArt :seed="track.seed" :size="artSize" :radius="5" />
+    <AlbumArt :seed="track.seed" :url="track.artworkUrl" :size="artSize" :radius="5" />
     <div style="flex: 1; min-width: 0">
       <div
         :style="{
