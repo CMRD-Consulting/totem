@@ -1,2 +1,87 @@
-/* For information on how to create your own theme, please refer to:
-http://ionicframework.com/docs/theming/ */
+/* Totem design tokens — paper / cream / midnight themes + carmine accent.
+   Default: midnight (dark-mode-first per design spec). */
+
+:root {
+  --bg: #15131a;
+  --surface: #1f1c26;
+  --ink: #f1ece0;
+  --muted: #9c948a;
+  --muted-2: #6b6359;
+  --divider: #2a2632;
+  --divider-strong: #3a3445;
+  --chip: rgba(255, 250, 240, 0.05);
+  --chip-strong: rgba(255, 250, 240, 0.08);
+  --accent: #d62e2e;
+  --accent-soft: rgba(214, 46, 46, 0.12);
+  --safe-top: env(safe-area-inset-top);
+  --safe-bottom: env(safe-area-inset-bottom);
+}
+
+:root[data-theme='paper'] {
+  --bg: #f5f1ea;
+  --surface: #fffcf7;
+  --ink: #1a1714;
+  --muted: #7a716a;
+  --muted-2: #a89e94;
+  --divider: #e8e1d5;
+  --divider-strong: #d4ccbe;
+  --chip: rgba(26, 23, 20, 0.05);
+  --chip-strong: rgba(26, 23, 20, 0.08);
+}
+
+:root[data-theme='cream'] {
+  --bg: #faf6ec;
+  --surface: #ffffff;
+  --ink: #0f0e0c;
+  --muted: #8a7f70;
+  --muted-2: #b5ab9a;
+  --divider: #ede6d6;
+  --divider-strong: #dcd2bd;
+  --chip: rgba(15, 14, 12, 0.04);
+  --chip-strong: rgba(15, 14, 12, 0.07);
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  color: var(--ink);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Hide scrollbars in inner scrollers — preserves the prototype's clean look. */
+.totem-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+@keyframes totem-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes totem-slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* Suppress Ionic's default page background so our themed bg shows through. */
+ion-app,
+ion-router-outlet,
+ion-page {
+  --background: var(--bg);
+  background: var(--bg);
+}
