@@ -1,32 +1,135 @@
 <script setup lang="ts">
-import { IonPage } from '@ionic/vue';
+import { IonPage, onIonViewWillEnter } from '@ionic/vue';
+import { Browser } from '@capacitor/browser';
+import { Capacitor } from '@capacitor/core';
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Icon from '@/components/Icon.vue';
 import IconButton from '@/components/IconButton.vue';
 import ScreenScroll from '@/components/ScreenScroll.vue';
 import ServiceGlyph from '@/components/ServiceGlyph.vue';
-import ToggleRow from '@/components/ToggleRow.vue';
 import TopBar from '@/components/TopBar.vue';
 import { SERVICES } from '@/data/mock';
-import { state } from '@/store/state';
+import { env } from '@/lib/env';
+import { supabase } from '@/lib/supabase';
+import { usePlaylistsStore } from '@/stores/playlists';
 import type { ServiceKey } from '@/types';
+
+interface MirrorTarget {
+  id: string;
+  service: ServiceKey;
+  enabled: boolean;
+  last_synced_at: string | null;
+  last_sync_error: string | null;
+}
 
 const router = useRouter();
 const route = useRoute();
-const active = ref<ServiceKey | null>('spotify');
-const autoSync = ref(true);
-const notify = ref(false);
-const hideMix = ref(false);
+const playlists = usePlaylistsStore();
+const targets = ref<Record<string, MirrorTarget>>({});
+const busy = ref(false);
+const error = ref<string | null>(null);
 
-const group = computed(() => {
-  const id = route.params.groupId as string;
-  return state.groups.find((g) => g.id === id) ?? state.groups[0];
-});
+const groupId = computed(() => route.params.groupId as string);
+const group = computed(
+  () => playlists.groups.find((g) => g.id === groupId.value) ?? playlists.groups[0],
+);
 
-function pick(k: ServiceKey) {
-  active.value = active.value === k ? null : k;
+const v0Implemented: ServiceKey[] = ['spotify'];
+function isImplemented(k: ServiceKey) {
+  return v0Implemented.includes(k);
 }
+
+function relSync(iso: string | null): string {
+  if (!iso) return 'no syncs yet';
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return 'synced just now';
+  const m = Math.floor(ms / 60_000);
+  if (m < 60) return `synced ${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `synced ${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `synced ${d}d ago`;
+}
+
+function statusLabel(k: ServiceKey): string {
+  const t = targets.value[k];
+  if (!t) return isImplemented(k) ? 'tap to mirror' : 'coming in v1';
+  if (t.last_sync_error) return `error: ${t.last_sync_error}`;
+  if (!t.enabled) return 'disabled — tap to re-enable';
+  return relSync(t.last_synced_at);
+}
+
+async function loadTargets() {
+  if (!groupId.value) return;
+  const { data, error: err } = await supabase
+    .from('mirror_targets')
+    .select('id, service, enabled, last_synced_at, last_sync_error')
+    .eq('playlist_id', groupId.value);
+  if (err) {
+    error.value = err.message;
+    return;
+  }
+  targets.value = Object.fromEntries(
+    (data ?? []).map((t) => [t.service, t as MirrorTarget]),
+  );
+}
+
+async function pick(k: ServiceKey) {
+  if (!isImplemented(k)) return;
+  if (busy.value) return;
+  busy.value = true;
+  error.value = null;
+  try {
+    const existing = targets.value[k];
+    if (existing) {
+      await supabase
+        .from('mirror_targets')
+        .update({ enabled: !existing.enabled })
+        .eq('id', existing.id);
+      await loadTargets();
+    } else {
+      await connectService(k);
+    }
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function connectService(k: ServiceKey) {
+  if (k !== 'spotify') return;
+  const { data: sess } = await supabase.auth.getSession();
+  if (!sess.session) throw new Error('Not signed in');
+  const url =
+    `${env.supabaseUrl}/functions/v1/oauth-start` +
+    `?playlist_id=${groupId.value}&jwt=${encodeURIComponent(sess.session.access_token)}`;
+
+  if (Capacitor.isNativePlatform()) {
+    const sub = await Browser.addListener('browserFinished', async () => {
+      await sub.remove();
+      await loadTargets();
+    });
+    await Browser.open({ url });
+  } else {
+    // Web: open the OAuth flow in a new tab. The callback page closes itself.
+    const popup = window.open(url, '_blank');
+    if (popup) {
+      const interval = window.setInterval(() => {
+        if (popup.closed) {
+          window.clearInterval(interval);
+          loadTargets();
+        }
+      }, 800);
+    }
+  }
+}
+
+onIonViewWillEnter(async () => {
+  if (!playlists.loaded) await playlists.loadList().catch(() => {});
+  await loadTargets();
+});
 </script>
 
 <template>
@@ -43,7 +146,7 @@ function pick(k: ServiceKey) {
     >
       <TopBar title="mirror settings">
         <template #left>
-          <IconButton name="close" @click="router.push(`/p/${group.id}`)" />
+          <IconButton name="close" @click="router.push(`/p/${group?.id ?? ''}`)" />
         </template>
       </TopBar>
 
@@ -58,7 +161,7 @@ function pick(k: ServiceKey) {
               letterSpacing: '-0.3px',
             }"
           >
-            keep <i style="color: var(--accent)">{{ group.name }}</i> in your own service
+            keep <i style="color: var(--accent)">{{ group?.name }}</i> in your own service
           </div>
           <div
             :style="{
@@ -79,9 +182,10 @@ function pick(k: ServiceKey) {
             v-for="(s, k) in SERVICES"
             :key="k"
             @click="pick(k as ServiceKey)"
+            :disabled="!isImplemented(k as ServiceKey) || busy"
             :style="{
               all: 'unset',
-              cursor: 'pointer',
+              cursor: isImplemented(k as ServiceKey) ? 'pointer' : 'not-allowed',
               width: '100%',
               boxSizing: 'border-box',
               display: 'flex',
@@ -90,10 +194,10 @@ function pick(k: ServiceKey) {
               padding: '14px',
               borderRadius: '14px',
               background: 'var(--surface)',
-              border:
-                active === k
-                  ? '1.5px solid var(--accent)'
-                  : '0.5px solid var(--divider)',
+              border: targets[k]?.enabled
+                ? '1.5px solid var(--accent)'
+                : '0.5px solid var(--divider)',
+              opacity: isImplemented(k as ServiceKey) ? 1 : 0.55,
               marginBottom: '8px',
             }"
           >
@@ -114,45 +218,39 @@ function pick(k: ServiceKey) {
                   color: 'var(--muted)',
                   marginTop: '1px',
                 }"
-              >
-                {{ active === k ? 'mirroring · synced 2m ago' : 'tap to mirror' }}
-              </div>
+              >{{ statusLabel(k as ServiceKey) }}</div>
             </div>
             <div
               :style="{
                 width: '22px',
                 height: '22px',
                 borderRadius: '50%',
-                border: active === k ? 'none' : '1.5px solid var(--divider-strong)',
-                background: active === k ? 'var(--accent)' : 'transparent',
+                border: targets[k]?.enabled ? 'none' : '1.5px solid var(--divider-strong)',
+                background: targets[k]?.enabled ? 'var(--accent)' : 'transparent',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#fff',
               }"
             >
-              <Icon v-if="active === k" name="check" :size="14" />
+              <Icon v-if="targets[k]?.enabled" name="check" :size="14" />
             </div>
           </button>
         </div>
 
-        <div v-if="active" style="padding: 14px 16px 0">
-          <ToggleRow
-            label="Auto-sync new tracks"
-            sublabel="when friends add songs they'll appear in your mirrored playlist within seconds"
-            v-model="autoSync"
-          />
-          <ToggleRow
-            label="Notify me on new adds"
-            sublabel="a soft push when someone adds a song"
-            v-model="notify"
-          />
-          <ToggleRow
-            label="Hide in cross-service sharing"
-            sublabel="don't tell other friends which service you use"
-            v-model="hideMix"
-          />
-        </div>
+        <div
+          v-if="error"
+          :style="{
+            margin: '12px 16px 0',
+            padding: '10px 12px',
+            borderRadius: '10px',
+            background: 'var(--accent-soft)',
+            border: '1px solid var(--accent)',
+            fontFamily: 'Inter',
+            fontSize: '12px',
+            color: 'var(--accent)',
+          }"
+        >{{ error }}</div>
 
         <div
           :style="{
@@ -165,6 +263,8 @@ function pick(k: ServiceKey) {
         >
           Totem isn't a player. Tracks always open in the service of your choice.
           Mirroring is a courtesy copy — you keep ownership of the playlist on your end.
+          <br /><br />
+          v0 mirrors to Spotify only; Apple Music and YouTube Music are coming.
         </div>
       </ScreenScroll>
     </div>
