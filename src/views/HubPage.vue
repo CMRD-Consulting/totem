@@ -57,8 +57,8 @@ async function onSettings() {
       </TopBar>
 
       <ScreenScroll>
-        <div :style="{ padding: '8px 22px 22px', display: 'flex', alignItems: 'flex-start', gap: '14px' }">
-          <LogoMark :size="64" />
+        <div :style="{ padding: '8px 22px 22px', display: 'flex', alignItems: 'center', gap: '14px' }">
+          <LogoMark :size="72" />
           <div>
             <Wordmark :size="42" />
             <div
