@@ -15,14 +15,24 @@ import TopBar from '@/components/TopBar.vue';
 import TrackRow from '@/components/TrackRow.vue';
 import { pillBtn } from '@/components/pillBtn';
 import { ACTIVITY, SERVICES } from '@/data/mock';
+import { supabase } from '@/lib/supabase';
 import { usePlaylistsStore } from '@/stores/playlists';
 import { usersById } from '@/store/users';
+import type { ServiceKey } from '@/types';
+
+interface MyMirror {
+  service: ServiceKey;
+  enabled: boolean;
+  last_synced_at: string | null;
+  last_sync_error: string | null;
+}
 
 const router = useRouter();
 const route = useRoute();
 const playlists = usePlaylistsStore();
 const tab = ref<'songs' | 'activity' | 'members'>('songs');
 const shareSheetOpen = ref(false);
+const myMirrors = ref<MyMirror[]>([]);
 
 const playlistId = computed(() => route.params.playlistId as string);
 const playlist = computed(
@@ -30,13 +40,59 @@ const playlist = computed(
 );
 const tracks = computed(() => playlists.tracksByPlaylistId[playlistId.value] ?? []);
 
+// Pick the most useful mirror to spotlight: enabled spotify > any enabled > any.
+// RLS scopes mirror_targets reads to user_id = auth.uid(), so this is "my" mirror.
+const primaryMirror = computed<MyMirror | null>(() => {
+  const list = myMirrors.value;
+  if (!list.length) return null;
+  return (
+    list.find((m) => m.enabled && m.service === 'spotify') ||
+    list.find((m) => m.enabled) ||
+    list[0]
+  );
+});
+
+function relSync(iso: string | null): string {
+  if (!iso) return 'no syncs yet';
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return 'synced just now';
+  const m = Math.floor(ms / 60_000);
+  if (m < 60) return `synced ${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `synced ${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `synced ${d}d ago`;
+}
+
+async function loadMyMirrors() {
+  if (!playlistId.value) return;
+  const { data, error } = await supabase
+    .from('mirror_targets')
+    .select('service, enabled, last_synced_at, last_sync_error')
+    .eq('playlist_id', playlistId.value);
+  if (error) {
+    myMirrors.value = [];
+    return;
+  }
+  myMirrors.value = (data ?? []) as MyMirror[];
+}
+
 onIonViewWillEnter(async () => {
   if (!playlists.loaded) await playlists.loadList().catch(() => {});
-  if (playlistId.value) await playlists.loadTracks(playlistId.value).catch(() => {});
+  if (playlistId.value) {
+    await Promise.all([
+      playlists.loadTracks(playlistId.value).catch(() => {}),
+      loadMyMirrors().catch(() => {}),
+    ]);
+  }
 });
 
 watch(playlistId, async (id) => {
-  if (id) await playlists.loadTracks(id).catch(() => {});
+  if (!id) return;
+  await Promise.all([
+    playlists.loadTracks(id).catch(() => {}),
+    loadMyMirrors().catch(() => {}),
+  ]);
 });
 
 function onSent() {
@@ -139,8 +195,10 @@ function onSent() {
             </button>
           </div>
 
-          <!-- Mirror status -->
+          <!-- Mirror status — live from mirror_targets, scoped to me by RLS -->
           <div
+            v-if="primaryMirror"
+            @click="router.push(`/p/${playlist.id}/mirror`)"
             style="
               margin-top: 14px;
               padding: 10px 12px;
@@ -149,9 +207,14 @@ function onSent() {
               display: flex;
               align-items: center;
               gap: 10px;
+              cursor: pointer;
             "
           >
-            <ServiceGlyph service="spotify" :size="16" :color="SERVICES.spotify.color" />
+            <ServiceGlyph
+              :service="primaryMirror.service"
+              :size="16"
+              :color="SERVICES[primaryMirror.service].color"
+            />
             <div
               :style="{
                 flex: 1,
@@ -160,10 +223,57 @@ function onSent() {
                 color: 'var(--ink)',
               }"
             >
-              Mirroring to your <b>Spotify</b>
-              <span style="color: var(--muted); font-weight: 400"> · synced 2m ago</span>
+              <template v-if="primaryMirror.last_sync_error">
+                <b>{{ SERVICES[primaryMirror.service].short }}</b> mirror
+                <span style="color: var(--accent); font-weight: 500">
+                  · {{ primaryMirror.last_sync_error }}
+                </span>
+              </template>
+              <template v-else-if="!primaryMirror.enabled">
+                <b>{{ SERVICES[primaryMirror.service].short }}</b> mirror
+                <span style="color: var(--muted); font-weight: 400">
+                  · disabled — tap to re-enable
+                </span>
+              </template>
+              <template v-else>
+                Mirroring to your <b>{{ SERVICES[primaryMirror.service].short }}</b>
+                <span style="color: var(--muted); font-weight: 400">
+                  · {{ relSync(primaryMirror.last_synced_at) }}
+                </span>
+              </template>
             </div>
-            <Icon name="check" :size="14" color="var(--accent)" />
+            <Icon
+              v-if="primaryMirror.enabled && !primaryMirror.last_sync_error"
+              name="check"
+              :size="14"
+              color="var(--accent)"
+            />
+            <Icon v-else name="chevron" :size="14" color="var(--muted-2)" />
+          </div>
+          <div
+            v-else
+            @click="router.push(`/p/${playlist.id}/mirror`)"
+            style="
+              margin-top: 14px;
+              padding: 10px 12px;
+              background: var(--chip);
+              border-radius: 10px;
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              cursor: pointer;
+            "
+          >
+            <Icon name="link" :size="16" color="var(--muted)" />
+            <div
+              :style="{
+                flex: 1,
+                fontFamily: 'Inter',
+                fontSize: '12px',
+                color: 'var(--muted)',
+              }"
+            >mirror this playlist into your own service</div>
+            <Icon name="chevron" :size="14" color="var(--muted-2)" />
           </div>
         </div>
 
