@@ -24,24 +24,24 @@ const playlists = usePlaylistsStore();
 const tab = ref<'songs' | 'activity' | 'members'>('songs');
 const shareSheetOpen = ref(false);
 
-const groupId = computed(() => route.params.groupId as string);
-const group = computed(
-  () => playlists.groups.find((g) => g.id === groupId.value) ?? playlists.groups[0],
+const playlistId = computed(() => route.params.playlistId as string);
+const playlist = computed(
+  () => playlists.playlists.find((g) => g.id === playlistId.value) ?? playlists.playlists[0],
 );
-const tracks = computed(() => playlists.tracksByPlaylistId[groupId.value] ?? []);
+const tracks = computed(() => playlists.tracksByPlaylistId[playlistId.value] ?? []);
 
 onIonViewWillEnter(async () => {
   if (!playlists.loaded) await playlists.loadList().catch(() => {});
-  if (groupId.value) await playlists.loadTracks(groupId.value).catch(() => {});
+  if (playlistId.value) await playlists.loadTracks(playlistId.value).catch(() => {});
 });
 
-watch(groupId, async (id) => {
+watch(playlistId, async (id) => {
   if (id) await playlists.loadTracks(id).catch(() => {});
 });
 
 function onSent() {
   shareSheetOpen.value = false;
-  if (groupId.value) playlists.loadTracks(groupId.value).catch(() => {});
+  if (playlistId.value) playlists.loadTracks(playlistId.value).catch(() => {});
 }
 </script>
 
@@ -71,8 +71,8 @@ function onSent() {
         <div style="padding: 4px 22px 18px">
           <div style="display: flex; align-items: flex-end; gap: 14px">
             <Sigil
-              :seeds="group.trackSeeds"
-              :hues="group.sigil"
+              :seeds="playlist.trackSeeds"
+              :hues="playlist.sigil"
               :size="72"
               :radius="12"
             />
@@ -96,7 +96,7 @@ function onSent() {
                   marginTop: '2px',
                   letterSpacing: '-0.5px',
                 }"
-              >{{ group.name }}</div>
+              >{{ playlist.name }}</div>
             </div>
           </div>
           <div
@@ -109,7 +109,7 @@ function onSent() {
             "
           >
             <AvatarStack
-              :ids="group.members.filter((m) => m !== 'you')"
+              :ids="playlist.members.filter((m) => m !== 'you')"
               :size="22"
               :max="5"
             />
@@ -121,7 +121,7 @@ function onSent() {
                 fontVariantNumeric: 'tabular-nums',
               }"
             >
-              {{ group.members.length }} friends · {{ group.tracks }} songs
+              {{ playlist.members.length }} friends · {{ playlist.tracks }} songs
             </span>
           </div>
 
@@ -131,10 +131,10 @@ function onSent() {
               <Icon name="plus" :size="15" />
               <span>add a song</span>
             </button>
-            <button :style="pillBtn(false)" @click="router.push(`/p/${group.id}/invite`)">
+            <button :style="pillBtn(false)" @click="router.push(`/p/${playlist.id}/invite`)">
               <Icon name="share" :size="15" />
             </button>
-            <button :style="pillBtn(false)" @click="router.push(`/p/${group.id}/mirror`)">
+            <button :style="pillBtn(false)" @click="router.push(`/p/${playlist.id}/mirror`)">
               <Icon name="link" :size="15" />
             </button>
           </div>
@@ -178,9 +178,9 @@ function onSent() {
         >
           <button
             v-for="t in [
-              { k: 'songs', label: 'songs', n: group.tracks },
+              { k: 'songs', label: 'songs', n: playlist.tracks },
               { k: 'activity', label: 'activity', n: null },
-              { k: 'members', label: 'friends', n: group.members.length },
+              { k: 'members', label: 'friends', n: playlist.members.length },
             ]"
             :key="t.k"
             @click="tab = (t.k as 'songs' | 'activity' | 'members')"
@@ -219,7 +219,7 @@ function onSent() {
             v-for="t in tracks"
             :key="t.id"
             :track="t"
-            @tap="router.push(`/p/${group.id}/t/${t.id}`)"
+            @tap="router.push(`/p/${playlist.id}/t/${t.id}`)"
           />
           <div
             v-if="tracks.length === 0"
@@ -246,7 +246,7 @@ function onSent() {
         <!-- Members -->
         <div v-else style="padding: 8px 14px">
           <div
-            v-for="m in group.members"
+            v-for="m in playlist.members"
             :key="m"
             style="display: flex; align-items: center; gap: 12px; padding: 10px 8px"
           >
@@ -299,7 +299,7 @@ function onSent() {
       @did-dismiss="shareSheetOpen = false"
     >
       <PasteLinkSheet
-        :group-id="groupId"
+        :playlist-id="playlistId"
         :is-open="shareSheetOpen"
         @close="shareSheetOpen = false"
         @sent="onSent"

@@ -20,12 +20,12 @@ const router = useRouter();
 const route = useRoute();
 const playlists = usePlaylistsStore();
 
-const groupId = computed(() => route.params.groupId as string);
+const playlistId = computed(() => route.params.playlistId as string);
 const trackId = computed(() => route.params.trackId as string);
 
 const track = computed(() => {
   // Prefer the live track from the playlists store; fall back to mock for demo data.
-  const real = playlists.tracksByPlaylistId[groupId.value]?.find((t) => t.id === trackId.value);
+  const real = playlists.tracksByPlaylistId[playlistId.value]?.find((t) => t.id === trackId.value);
   return real ?? state.tracks.find((t) => t.id === trackId.value) ?? state.tracks[0];
 });
 const adder = computed(() => usersById[track.value.adder]);
@@ -56,7 +56,7 @@ const services: ServiceKey[] = ['spotify', 'apple', 'youtube'];
     >
       <TopBar>
         <template #left>
-          <IconButton name="back" @click="router.push(`/p/${groupId}`)" />
+          <IconButton name="back" @click="router.push(`/p/${playlistId}`)" />
         </template>
         <template #right>
           <IconButton name="more" />

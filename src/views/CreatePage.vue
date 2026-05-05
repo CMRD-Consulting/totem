@@ -70,7 +70,7 @@ async function onCreate() {
         overflow: hidden;
       "
     >
-      <TopBar title="new group">
+      <TopBar title="new playlist">
         <template #left>
           <IconButton name="close" @click="router.push('/')" />
         </template>
@@ -91,7 +91,7 @@ async function onCreate() {
               lineHeight: 1.1,
             }"
           >
-            what do you call this <i style="color: var(--accent)">circle</i>?
+            what do you call this <i style="color: var(--accent)">playlist</i>?
           </div>
           <div
             :style="{
@@ -188,7 +188,7 @@ async function onCreate() {
 
         <div style="padding: 32px 22px 0">
           <button :disabled="disabled" :style="buttonStyle" @click="onCreate">
-            {{ busy ? 'creating…' : 'create group' }}
+            {{ busy ? 'creating…' : 'create playlist' }}
           </button>
           <div
             v-if="error"

@@ -30,9 +30,9 @@ const targets = ref<Record<string, MirrorTarget>>({});
 const busy = ref(false);
 const error = ref<string | null>(null);
 
-const groupId = computed(() => route.params.groupId as string);
-const group = computed(
-  () => playlists.groups.find((g) => g.id === groupId.value) ?? playlists.groups[0],
+const playlistId = computed(() => route.params.playlistId as string);
+const playlist = computed(
+  () => playlists.playlists.find((g) => g.id === playlistId.value) ?? playlists.playlists[0],
 );
 
 const v0Implemented: ServiceKey[] = ['spotify'];
@@ -61,11 +61,11 @@ function statusLabel(k: ServiceKey): string {
 }
 
 async function loadTargets() {
-  if (!groupId.value) return;
+  if (!playlistId.value) return;
   const { data, error: err } = await supabase
     .from('mirror_targets')
     .select('id, service, enabled, last_synced_at, last_sync_error')
-    .eq('playlist_id', groupId.value);
+    .eq('playlist_id', playlistId.value);
   if (err) {
     error.value = err.message;
     return;
@@ -104,7 +104,7 @@ async function connectService(k: ServiceKey) {
   if (!sess.session) throw new Error('Not signed in');
   const url =
     `${env.supabaseUrl}/functions/v1/oauth-start` +
-    `?playlist_id=${groupId.value}&jwt=${encodeURIComponent(sess.session.access_token)}`;
+    `?playlist_id=${playlistId.value}&jwt=${encodeURIComponent(sess.session.access_token)}`;
 
   if (Capacitor.isNativePlatform()) {
     const sub = await Browser.addListener('browserFinished', async () => {
@@ -146,7 +146,7 @@ onIonViewWillEnter(async () => {
     >
       <TopBar title="mirror settings">
         <template #left>
-          <IconButton name="close" @click="router.push(`/p/${group?.id ?? ''}`)" />
+          <IconButton name="close" @click="router.push(`/p/${playlist?.id ?? ''}`)" />
         </template>
       </TopBar>
 
@@ -161,7 +161,7 @@ onIonViewWillEnter(async () => {
               letterSpacing: '-0.3px',
             }"
           >
-            keep <i style="color: var(--accent)">{{ group?.name }}</i> in your own service
+            keep <i style="color: var(--accent)">{{ playlist?.name }}</i> in your own service
           </div>
           <div
             :style="{

@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { env } from '@/lib/env';
 import { supabase } from '@/lib/supabase';
 import { registerProfile } from '@/store/users';
-import type { Group, ServiceKey, Track } from '@/types';
+import type { Playlist, ServiceKey, Track } from '@/types';
 
 interface PlaylistRow {
   id: string;
@@ -58,7 +58,7 @@ function pickService(t: PlaylistTrackRow['track']): ServiceKey {
   return 'spotify';
 }
 
-function rowToGroup(row: PlaylistRow, meId: string | undefined): Group {
+function rowToPlaylist(row: PlaylistRow, meId: string | undefined): Playlist {
   const memberIds = row.members.map((m) => m.user_id);
   const ordered = meId
     ? [meId, ...memberIds.filter((id) => id !== meId)]
@@ -94,7 +94,7 @@ function rowToTrack(row: PlaylistTrackRow): Track {
 }
 
 export const usePlaylistsStore = defineStore('playlists', () => {
-  const groups = ref<Group[]>([]);
+  const playlists = ref<Playlist[]>([]);
   const tracksByPlaylistId = ref<Record<string, Track[]>>({});
   const loaded = ref(false);
   const loading = ref(false);
@@ -129,7 +129,7 @@ export const usePlaylistsStore = defineStore('playlists', () => {
         }
       }
 
-      groups.value = rows.map((r) => rowToGroup(r, meId));
+      playlists.value = rows.map((r) => rowToPlaylist(r, meId));
       loaded.value = true;
     } catch (e) {
       error.value = (e as Error).message;
@@ -221,16 +221,16 @@ export const usePlaylistsStore = defineStore('playlists', () => {
   }
 
   function reset() {
-    groups.value = [];
+    playlists.value = [];
     tracksByPlaylistId.value = {};
     loaded.value = false;
     error.value = null;
   }
 
-  const isEmpty = computed(() => loaded.value && groups.value.length === 0);
+  const isEmpty = computed(() => loaded.value && playlists.value.length === 0);
 
   return {
-    groups,
+    playlists,
     tracksByPlaylistId,
     loaded,
     loading,

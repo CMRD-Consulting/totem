@@ -1,7 +1,7 @@
 import type {
   ActivityItem,
   Friend,
-  Group,
+  Playlist,
   Service,
   ServiceKey,
   Track,
@@ -168,7 +168,7 @@ export const TRACKS: Track[] = [
   },
 ];
 
-export const GROUPS: Group[] = [
+export const PLAYLISTS: Playlist[] = [
   {
     id: 'g1',
     name: "Brick Top's Favorites",
@@ -227,7 +227,7 @@ export const ACTIVITY: ActivityItem[] = [
     emoji: '👑',
     when: '15m',
   },
-  { id: 'a6', kind: 'join', who: 'wen', what: 'joined the group', when: '1h' },
+  { id: 'a6', kind: 'join', who: 'wen', what: 'joined the playlist', when: '1h' },
   {
     id: 'a7',
     kind: 'add',

@@ -56,7 +56,7 @@ onMounted(async () => {
               marginTop: '24px',
               lineHeight: 1.35,
             }"
-          >joining the circle…</div>
+          >joining the playlist…</div>
           <div
             :style="{
               marginTop: '20px',
@@ -105,7 +105,7 @@ onMounted(async () => {
             }"
           >
             <Icon name="back" :size="14" />
-            back to your groups
+            back to your playlists
           </button>
         </template>
       </div>

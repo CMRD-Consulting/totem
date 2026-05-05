@@ -77,10 +77,10 @@ async function onSettings() {
           </div>
         </div>
 
-        <SectionHeader>your groups</SectionHeader>
+        <SectionHeader>your playlists</SectionHeader>
         <div style="padding: 0 14px">
           <div
-            v-for="g in playlists.groups"
+            v-for="g in playlists.playlists"
             :key="g.id"
             @click="router.push(`/p/${g.id}`)"
             :style="{
@@ -167,7 +167,7 @@ async function onSettings() {
                   fontSize: '14px',
                   color: 'var(--ink)',
                 }"
-              >start a new group</div>
+              >start a new playlist</div>
               <div
                 :style="{
                   fontFamily: 'Inter',

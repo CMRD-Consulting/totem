@@ -21,13 +21,13 @@ const route = useRoute();
 const playlists = usePlaylistsStore();
 const copied = ref(false);
 
-const group = computed(() => {
-  const id = route.params.groupId as string;
-  return playlists.groups.find((g) => g.id === id) ?? playlists.groups[0];
+const playlist = computed(() => {
+  const id = route.params.playlistId as string;
+  return playlists.playlists.find((g) => g.id === id) ?? playlists.playlists[0];
 });
 
 const inviteUrl = computed(() => {
-  const token = group.value?.inviteToken ?? '';
+  const token = playlist.value?.inviteToken ?? '';
   const origin =
     typeof window !== 'undefined' ? window.location.origin : 'https://totem.cmrd.dev';
   return `${origin}/i/${token}`;
@@ -37,7 +37,7 @@ onIonViewWillEnter(async () => {
   if (!playlists.loaded) await playlists.loadList().catch(() => {});
 });
 
-const cells = computed(() => buildQR(group.value?.id ?? ''));
+const cells = computed(() => buildQR(playlist.value?.id ?? ''));
 const N = 21;
 
 function buildQR(seed: string): boolean[][] {
@@ -85,9 +85,9 @@ async function onCopy() {
 }
 
 async function onShare() {
-  if (!group.value) return;
+  if (!playlist.value) return;
   const payload = {
-    title: `Join "${group.value.name}" on Totem`,
+    title: `Join "${playlist.value.name}" on Totem`,
     url: inviteUrl.value,
     dialogTitle: 'Share invite',
   };
@@ -101,8 +101,8 @@ async function onShare() {
 }
 
 const serviceCount = (k: ServiceKey) =>
-  group.value
-    ? group.value.members.filter((m) => usersById[m]?.service === k).length
+  playlist.value
+    ? playlist.value.members.filter((m) => usersById[m]?.service === k).length
     : 0;
 </script>
 
@@ -120,14 +120,14 @@ const serviceCount = (k: ServiceKey) =>
     >
       <TopBar title="invite friends">
         <template #left>
-          <IconButton name="close" @click="router.push(`/p/${group?.id}`)" />
+          <IconButton name="close" @click="router.push(`/p/${playlist?.id}`)" />
         </template>
       </TopBar>
 
       <ScreenScroll>
         <div style="padding: 8px 22px 0; text-align: center">
-          <div v-if="group" style="display: inline-block">
-            <Sigil :seeds="group.trackSeeds" :hues="group.sigil" :size="68" :radius="12" />
+          <div v-if="playlist" style="display: inline-block">
+            <Sigil :seeds="playlist.trackSeeds" :hues="playlist.sigil" :size="68" :radius="12" />
           </div>
           <div
             :style="{
@@ -137,7 +137,7 @@ const serviceCount = (k: ServiceKey) =>
               marginTop: '12px',
               letterSpacing: '-0.3px',
             }"
-          >{{ group?.name }}</div>
+          >{{ playlist?.name }}</div>
           <div
             :style="{
               fontFamily: 'Inter',
@@ -197,9 +197,9 @@ const serviceCount = (k: ServiceKey) =>
                 color: 'var(--ink)',
                 letterSpacing: '0.5px',
               }"
-            >{{ group?.code }}</div>
+            >{{ playlist?.code }}</div>
             <div style="font-family: Inter; font-size: 11px; color: var(--muted)">
-              expires in 24h · {{ group?.members.length ?? 0 }} friends in this group
+              expires in 24h · {{ playlist?.members.length ?? 0 }} friends in this playlist
             </div>
           </div>
         </div>
@@ -230,7 +230,7 @@ const serviceCount = (k: ServiceKey) =>
               color: 'var(--muted)',
               marginBottom: '8px',
             }"
-          >your group's services</div>
+          >your playlist's services</div>
           <div style="display: flex; gap: 8px; flex-wrap: wrap">
             <template v-for="(s, k) in SERVICES" :key="k">
               <div

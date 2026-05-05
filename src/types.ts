@@ -32,7 +32,7 @@ export interface Track {
   artworkUrl?: string;
 }
 
-export interface Group {
+export interface Playlist {
   id: string;
   name: string;
   code: string;

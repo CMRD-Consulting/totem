@@ -5,7 +5,7 @@ import Icon from '@/components/Icon.vue';
 import Sigil from '@/components/Sigil.vue';
 import { usePlaylistsStore } from '@/stores/playlists';
 
-const props = defineProps<{ groupId: string; isOpen: boolean }>();
+const props = defineProps<{ playlistId: string; isOpen: boolean }>();
 const emit = defineEmits<{ close: []; sent: [] }>();
 
 const playlists = usePlaylistsStore();
@@ -16,7 +16,7 @@ const busy = ref(false);
 const saved = ref(false);
 const error = ref<string | null>(null);
 
-const group = computed(() => playlists.groups.find((g) => g.id === props.groupId));
+const playlist = computed(() => playlists.playlists.find((g) => g.id === props.playlistId));
 
 const isLikelyUrl = computed(() => /^https?:\/\//i.test(url.value.trim()));
 
@@ -35,11 +35,11 @@ watch(
 );
 
 async function send() {
-  if (!isLikelyUrl.value || !props.groupId || busy.value) return;
+  if (!isLikelyUrl.value || !props.playlistId || busy.value) return;
   busy.value = true;
   error.value = null;
   try {
-    await playlists.ingestUrl(props.groupId, url.value.trim());
+    await playlists.ingestUrl(props.playlistId, url.value.trim());
     saved.value = true;
     setTimeout(() => emit('sent'), 700);
   } catch (e) {
@@ -109,9 +109,9 @@ async function send() {
       </button>
     </div>
 
-    <!-- Target group preview -->
+    <!-- Target playlist preview -->
     <div
-      v-if="group"
+      v-if="playlist"
       style="
         margin: 0 16px;
         padding: 10px 12px;
@@ -123,7 +123,7 @@ async function send() {
         gap: 12px;
       "
     >
-      <Sigil :seeds="group.trackSeeds" :hues="group.sigil" :size="40" :radius="8" />
+      <Sigil :seeds="playlist.trackSeeds" :hues="playlist.sigil" :size="40" :radius="8" />
       <div style="flex: 1; min-width: 0">
         <div
           :style="{
@@ -142,7 +142,7 @@ async function send() {
             color: 'var(--ink)',
             marginTop: '1px',
           }"
-        >{{ group.name }}</div>
+        >{{ playlist.name }}</div>
       </div>
       <span
         :style="{
@@ -151,7 +151,7 @@ async function send() {
           color: 'var(--muted)',
           fontVariantNumeric: 'tabular-nums',
         }"
-      >{{ group.members.length }} friends</span>
+      >{{ playlist.members.length }} friends</span>
     </div>
 
     <!-- URL input -->
@@ -258,10 +258,10 @@ async function send() {
       >
         <template v-if="saved">
           <Icon name="check" :size="18" />
-          sent to {{ group?.name }}
+          sent to {{ playlist?.name }}
         </template>
         <template v-else-if="busy">adding to playlist…</template>
-        <template v-else>send to group</template>
+        <template v-else>send to playlist</template>
       </button>
     </div>
   </div>
