@@ -15,6 +15,7 @@ const note = ref('');
 const busy = ref(false);
 const saved = ref(false);
 const error = ref<string | null>(null);
+const urlInput = ref<HTMLInputElement | null>(null);
 
 const playlist = computed(() => playlists.playlists.find((g) => g.id === props.playlistId));
 
@@ -43,6 +44,15 @@ function send() {
   saved.value = true;
   setTimeout(() => emit('sent'), 250);
 }
+
+/** Imperative focus handle — called by the parent on IonModal @did-present
+ *  so we focus only after the slide-up animation completes (firing earlier
+ *  loses to the animation and iOS may not raise the keyboard). */
+function focus() {
+  urlInput.value?.focus();
+}
+
+defineExpose({ focus });
 </script>
 
 <template>
@@ -152,6 +162,7 @@ function send() {
     <!-- URL input -->
     <div style="padding: 16px 16px 0">
       <input
+        ref="urlInput"
         v-model="url"
         type="url"
         inputmode="url"

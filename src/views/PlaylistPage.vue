@@ -111,6 +111,13 @@ function onSent() {
   if (playlistId.value) playlists.loadTracks(playlistId.value).catch(() => {});
 }
 
+const pasteLinkSheetRef = ref<{ focus: () => void } | null>(null);
+
+function onShareSheetPresented() {
+  // Focus the URL input only after the modal's slide-up animation completes.
+  pasteLinkSheetRef.value?.focus();
+}
+
 const isCreator = computed(
   () => !!playlist.value && !!auth.user && playlist.value.createdBy === auth.user.id,
 );
@@ -469,9 +476,11 @@ async function onActionPicked(ev: CustomEvent) {
       :initial-breakpoint="0.85"
       :breakpoints="[0, 0.85]"
       :handle="true"
+      @did-present="onShareSheetPresented"
       @did-dismiss="shareSheetOpen = false"
     >
       <PasteLinkSheet
+        ref="pasteLinkSheetRef"
         :playlist-id="playlistId"
         :is-open="shareSheetOpen"
         @close="shareSheetOpen = false"
