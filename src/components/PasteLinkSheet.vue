@@ -16,10 +16,53 @@ const busy = ref(false);
 const saved = ref(false);
 const error = ref<string | null>(null);
 const urlInput = ref<HTMLInputElement | null>(null);
+const clipboardSuggestion = ref<string | null>(null);
 
 const playlist = computed(() => playlists.playlists.find((g) => g.id === props.playlistId));
 
 const isLikelyUrl = computed(() => /^https?:\/\//i.test(url.value.trim()));
+
+// Hosts we can resolve via Songlink → ingest. Spotify URI scheme is also valid.
+const MUSIC_HOSTS = new Set([
+  'open.spotify.com',
+  'spotify.link',
+  'music.apple.com',
+  'itunes.apple.com',
+  'music.youtube.com',
+  'youtube.com',
+  'm.youtube.com',
+  'youtu.be',
+]);
+
+function isMusicUrl(s: string): boolean {
+  const trimmed = s.trim();
+  if (/^spotify:(track|album|playlist):/i.test(trimmed)) return true;
+  try {
+    const u = new URL(trimmed);
+    return MUSIC_HOSTS.has(u.hostname.replace(/^www\./, ''));
+  } catch {
+    return false;
+  }
+}
+
+/** Display label: drop the scheme + truncate so the chip stays one line. */
+function shortUrl(s: string): string {
+  let pretty = s.replace(/^https?:\/\/(www\.)?/, '');
+  if (pretty.length > 38) pretty = pretty.slice(0, 36) + '…';
+  return pretty;
+}
+
+async function peekClipboard() {
+  // navigator.clipboard.readText works in iOS 14.5+ WKWebView. On first call
+  // the user may see a system "Allow paste?" prompt; we silently swallow
+  // denials and just don't show the chip.
+  try {
+    const text = (await navigator.clipboard.readText()).trim();
+    clipboardSuggestion.value = text && isMusicUrl(text) ? text : null;
+  } catch {
+    clipboardSuggestion.value = null;
+  }
+}
 
 // Reset transient state every time the sheet opens.
 watch(
@@ -31,9 +74,15 @@ watch(
       saved.value = false;
       error.value = null;
       busy.value = false;
+      clipboardSuggestion.value = null;
     }
   },
 );
+
+// Hide the suggestion the moment the user starts typing — it's no longer relevant.
+watch(url, (v) => {
+  if (v) clipboardSuggestion.value = null;
+});
 
 function send() {
   if (!isLikelyUrl.value || !props.playlistId || busy.value) return;
@@ -45,11 +94,20 @@ function send() {
   setTimeout(() => emit('sent'), 250);
 }
 
+/** One-tap shortcut: fill the input with the clipboard URL AND fire send. */
+function pasteAndAdd() {
+  if (!clipboardSuggestion.value) return;
+  url.value = clipboardSuggestion.value;
+  send();
+}
+
 /** Imperative focus handle — called by the parent on IonModal @did-present
  *  so we focus only after the slide-up animation completes (firing earlier
- *  loses to the animation and iOS may not raise the keyboard). */
+ *  loses to the animation and iOS may not raise the keyboard).
+ *  Also peeks at the clipboard while we're already in a user-gesture context. */
 function focus() {
   urlInput.value?.focus();
+  peekClipboard();
 }
 
 defineExpose({ focus });
@@ -184,6 +242,51 @@ defineExpose({ focus });
         }"
         @keyup.enter="send"
       />
+    </div>
+
+    <!-- Clipboard quick-paste — appears when the OS clipboard holds a music URL.
+         One tap fills the input AND sends, skipping the manual paste + tap. -->
+    <div v-if="!url && clipboardSuggestion" style="padding: 10px 16px 0">
+      <button
+        @click="pasteAndAdd"
+        :style="{
+          all: 'unset',
+          cursor: 'pointer',
+          boxSizing: 'border-box',
+          width: '100%',
+          padding: '10px 12px',
+          borderRadius: '12px',
+          background: 'var(--accent-soft)',
+          border: '1px solid var(--accent)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+        }"
+      >
+        <Icon name="copy" :size="14" color="var(--accent)" />
+        <div style="flex: 1; min-width: 0; text-align: left">
+          <div
+            :style="{
+              fontFamily: 'Inter',
+              fontWeight: 600,
+              fontSize: '12.5px',
+              color: 'var(--accent)',
+            }"
+          >paste &amp; add</div>
+          <div
+            :style="{
+              fontFamily: '&quot;JetBrains Mono&quot;, ui-monospace, monospace',
+              fontSize: '11px',
+              color: 'var(--muted)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              marginTop: '1px',
+            }"
+          >{{ shortUrl(clipboardSuggestion) }}</div>
+        </div>
+        <Icon name="arrow-out" :size="14" color="var(--accent)" />
+      </button>
     </div>
 
     <!-- Optional note -->
