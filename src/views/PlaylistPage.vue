@@ -23,6 +23,7 @@ import TrackRow from '@/components/TrackRow.vue';
 import { pillBtn } from '@/components/pillBtn';
 import { ACTIVITY, SERVICES } from '@/data/mock';
 import { supabase } from '@/lib/supabase';
+import { useRealtimePlaylist } from '@/composables/useRealtimePlaylist';
 import { useAuthStore } from '@/stores/auth';
 import { usePlaylistsStore } from '@/stores/playlists';
 import { usersById } from '@/store/users';
@@ -104,6 +105,9 @@ onIonViewWillEnter(async () => {
     ]);
   }
 });
+
+// Live updates: when a friend adds/removes a track, refetch automatically.
+useRealtimePlaylist(playlistId);
 
 watch(playlistId, async (id) => {
   if (!id) return;
