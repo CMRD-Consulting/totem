@@ -260,7 +260,7 @@ async function send() {
           <Icon name="check" :size="18" />
           sent to {{ group?.name }}
         </template>
-        <template v-else-if="busy">resolving…</template>
+        <template v-else-if="busy">adding to playlist…</template>
         <template v-else>send to group</template>
       </button>
     </div>
