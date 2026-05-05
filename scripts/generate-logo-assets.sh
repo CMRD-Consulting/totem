@@ -41,8 +41,8 @@ render_icon() {
   mark_h=$(awk -v s="${size}" -v r="${MARK_RATIO}" 'BEGIN { printf "%d", s * r }')
   magick -background none \
     -density 600 \
-    -resize "x${mark_h}" \
     "${WORK_DIR}/mark-cream.svg" \
+    -resize "x${mark_h}" \
     -background "${MIDNIGHT}" \
     -gravity center \
     -extent "${size}x${size}" \
@@ -55,8 +55,11 @@ render_transparent_ink() {
   local out="$1" h="$2"
   magick -background none \
     -density 600 \
-    -resize "x${h}" \
     "${WORK_DIR}/mark-ink.svg" \
+    -resize "x${h}" \
+    -background none \
+    -gravity center \
+    -extent "${h}x${h}" \
     "${out}"
 }
 
