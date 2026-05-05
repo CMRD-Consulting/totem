@@ -4,6 +4,7 @@ import { Capacitor } from '@capacitor/core';
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Wordmark from '@/components/Wordmark.vue';
+import LogoMark from '@/components/LogoMark.vue';
 import { supabase } from '@/lib/supabase';
 
 const router = useRouter();
@@ -118,6 +119,7 @@ function resetEmail() {
       "
     >
       <div style="text-align: center; max-width: 320px">
+        <LogoMark :size="80" :style="{ marginBottom: '12px' }" />
         <Wordmark :size="64" />
         <div
           :style="{
