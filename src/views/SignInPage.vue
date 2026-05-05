@@ -119,8 +119,10 @@ function resetEmail() {
       "
     >
       <div style="text-align: center; max-width: 320px">
-        <LogoMark :size="80" />
-        <Wordmark :size="64" />
+        <div :style="{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }">
+          <LogoMark :size="60" />
+          <Wordmark :size="64" />
+        </div>
         <div
           :style="{
             fontFamily: '&quot;Instrument Serif&quot;, Georgia, serif',
