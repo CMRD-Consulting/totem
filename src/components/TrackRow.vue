@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { friendsById, SERVICES } from '@/data/mock';
+import { SERVICES } from '@/data/mock';
 import { state, toggleReaction } from '@/store/state';
+import { usersById } from '@/store/users';
 import type { Track } from '@/types';
 import AlbumArt from './AlbumArt.vue';
 import Avatar from './Avatar.vue';
+import Icon from './Icon.vue';
 import ReactionPill from './ReactionPill.vue';
 import ServiceGlyph from './ServiceGlyph.vue';
 
@@ -17,9 +19,9 @@ const props = withDefaults(
   { density: 'cozy', showService: 'subtle' },
 );
 
-defineEmits<{ tap: [] }>();
+const emit = defineEmits<{ tap: []; dismiss: [] }>();
 
-const adder = computed(() => friendsById[props.track.adder]);
+const adder = computed(() => usersById[props.track.adder]);
 const myReactions = computed(
   () =>
     new Set(
@@ -35,32 +37,82 @@ function onReact(e: MouseEvent, emoji: string) {
   e.stopPropagation();
   toggleReaction(props.track.id, emoji);
 }
+
+function onClickRow() {
+  if (props.track.status === 'failed') {
+    emit('dismiss');
+  } else if (props.track.status === 'resolving') {
+    // Non-interactive while in flight.
+    return;
+  } else {
+    emit('tap');
+  }
+}
 </script>
 
 <template>
   <div
-    @click="$emit('tap')"
+    @click="onClickRow"
     :style="{
       display: 'flex',
       alignItems: 'center',
       gap: '12px',
       padding: `${padY}px 18px`,
-      cursor: 'pointer',
+      cursor: track.status === 'resolving' ? 'default' : 'pointer',
       borderBottom: '0.5px solid var(--divider)',
+      opacity: track.status === 'resolving' ? 0.85 : 1,
     }"
   >
-    <AlbumArt :seed="track.seed" :url="track.artworkUrl" :size="artSize" :radius="5" />
+    <!-- Resolving: shimmering placeholder art -->
+    <div
+      v-if="track.status === 'resolving'"
+      class="totem-shimmer"
+      :style="{
+        width: artSize + 'px',
+        height: artSize + 'px',
+        borderRadius: '5px',
+        flexShrink: 0,
+        boxShadow: 'inset 0 0 0 0.5px rgba(0,0,0,0.15)',
+      }"
+    />
+    <!-- Failed: muted art with an X overlay -->
+    <div
+      v-else-if="track.status === 'failed'"
+      :style="{
+        width: artSize + 'px',
+        height: artSize + 'px',
+        borderRadius: '5px',
+        flexShrink: 0,
+        background: 'var(--chip-strong)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'var(--accent)',
+        boxShadow: 'inset 0 0 0 1px var(--accent)',
+      }"
+    >
+      <Icon name="close" :size="20" color="var(--accent)" />
+    </div>
+    <AlbumArt
+      v-else
+      :seed="track.seed"
+      :url="track.artworkUrl"
+      :size="artSize"
+      :radius="5"
+    />
+
     <div style="flex: 1; min-width: 0">
       <div
         :style="{
           fontFamily: 'Inter',
           fontWeight: 600,
           fontSize: '15px',
-          color: 'var(--ink)',
+          color: track.status === 'failed' ? 'var(--accent)' : 'var(--ink)',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           letterSpacing: '-0.1px',
+          fontStyle: track.status === 'resolving' ? 'italic' : 'normal',
         }"
       >{{ track.title }}</div>
       <div
@@ -73,8 +125,17 @@ function onReact(e: MouseEvent, emoji: string) {
           textOverflow: 'ellipsis',
           marginTop: '1px',
         }"
-      >{{ track.artist }}</div>
+      >
+        <template v-if="track.status === 'failed'">{{ track.errorMessage ?? 'unknown error' }}</template>
+        <template v-else-if="track.status === 'resolving'">
+          <span class="totem-resolving-dots">looking it up</span>
+        </template>
+        <template v-else>{{ track.artist }}</template>
+      </div>
+
+      <!-- Meta row only on normal tracks -->
       <div
+        v-if="!track.status"
         style="
           display: flex;
           align-items: center;
@@ -122,8 +183,23 @@ function onReact(e: MouseEvent, emoji: string) {
           </span>
         </template>
       </div>
+
+      <!-- Failed: tap-to-dismiss hint -->
       <div
-        v-if="track.reactions.length > 0"
+        v-else-if="track.status === 'failed'"
+        :style="{
+          fontFamily: '&quot;JetBrains Mono&quot;, monospace',
+          fontSize: '10px',
+          color: 'var(--muted-2)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.6px',
+          marginTop: '4px',
+        }"
+      >tap to dismiss</div>
+
+      <!-- Reactions only on normal tracks -->
+      <div
+        v-if="!track.status && track.reactions.length > 0"
         style="display: flex; gap: 4px; margin-top: 7px; flex-wrap: wrap"
       >
         <ReactionPill
@@ -138,3 +214,47 @@ function onReact(e: MouseEvent, emoji: string) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.totem-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--chip) 0%,
+    var(--chip-strong) 50%,
+    var(--chip) 100%
+  );
+  background-size: 200% 100%;
+  animation: totem-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes totem-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.totem-resolving-dots::after {
+  content: '…';
+  animation: totem-dots 1.2s steps(4, end) infinite;
+}
+
+@keyframes totem-dots {
+  0%,
+  20% {
+    content: '';
+  }
+  40% {
+    content: '.';
+  }
+  60% {
+    content: '..';
+  }
+  80%,
+  100% {
+    content: '…';
+  }
+}
+</style>

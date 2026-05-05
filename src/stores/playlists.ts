@@ -98,6 +98,11 @@ function rowToTrack(row: PlaylistTrackRow): Track {
 export const usePlaylistsStore = defineStore('playlists', () => {
   const playlists = ref<Playlist[]>([]);
   const tracksByPlaylistId = ref<Record<string, Track[]>>({});
+  // Client-only optimistic entries during ingest. Keyed by playlist id; each
+  // entry carries status='resolving'|'failed' and is rendered alongside real
+  // tracks until either the DB row appears (success → entry is removed) or
+  // the user dismisses the failure.
+  const pendingByPlaylistId = ref<Record<string, Track[]>>({});
   const loaded = ref(false);
   const loading = ref(false);
   const error = ref<string | null>(null);
@@ -185,41 +190,113 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     return data?.[0] as { playlist_id: string; name: string } | undefined;
   }
 
-  async function ingestUrl(playlistId: string, url: string) {
+  /**
+   * Kicks off ingestion with an optimistic 'resolving' track row, then
+   * resolves it inline:
+   *   success → remove the pending entry + reload real tracks (DB row visible)
+   *   failure → mutate the pending entry to status='failed' so the row
+   *             persists in the UI for the user to retry/dismiss.
+   *
+   * Returns the pending id so callers can later look it up if needed; the
+   * function itself doesn't throw — failures live on the pending entry.
+   */
+  async function ingestUrl(playlistId: string, url: string): Promise<string> {
     const { data: sess } = await supabase.auth.getSession();
-    if (!sess.session) throw new Error('Not signed in');
+    const session = sess.session;
+    if (!session) {
+      const id = pushPending(playlistId, url, undefined);
+      markPendingFailed(playlistId, id, 'Not signed in');
+      return id;
+    }
+    const meId = session.user.id;
+    const pendingId = pushPending(playlistId, url, meId);
 
-    let res: Response;
     try {
-      res = await fetch(`${env.supabaseUrl}/functions/v1/ingest-track`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${sess.session.access_token}`,
-          'Content-Type': 'application/json',
-          apikey: env.supabaseAnonKey,
-        },
-        body: JSON.stringify({ playlist_id: playlistId, url }),
-      });
-    } catch (e) {
-      // Network error / blocked CORS preflight — fetch never got a response.
-      throw new Error(
-        `Couldn't reach ingest-track. Likely the function isn't deployed yet ` +
-          `or CORS is blocking the request. (${(e as Error).message})`,
-      );
-    }
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      if (res.status === 404) {
-        throw new Error(
-          'ingest-track edge function returned 404. ' +
-            'Run `supabase functions deploy ingest-track` to deploy it.',
+      let res: Response;
+      try {
+        res = await fetch(`${env.supabaseUrl}/functions/v1/ingest-track`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+            apikey: env.supabaseAnonKey,
+          },
+          body: JSON.stringify({ playlist_id: playlistId, url }),
+        });
+      } catch (e) {
+        markPendingFailed(
+          playlistId,
+          pendingId,
+          `Couldn't reach the server. ${(e as Error).message}`,
         );
+        return pendingId;
       }
-      throw new Error(`${res.status}: ${text || res.statusText}`);
-    }
 
-    await loadTracks(playlistId);
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        const msg =
+          res.status === 404
+            ? 'ingest-track edge function not deployed.'
+            : `${res.status}: ${text || res.statusText}`;
+        markPendingFailed(playlistId, pendingId, msg);
+        return pendingId;
+      }
+
+      // Success: drop the pending row + reload tracks so the real one shows.
+      removePending(playlistId, pendingId);
+      await loadTracks(playlistId);
+    } catch (e) {
+      markPendingFailed(playlistId, pendingId, (e as Error).message);
+    }
+    return pendingId;
+  }
+
+  function pushPending(playlistId: string, url: string, addedBy: string | undefined): string {
+    const id = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const seed = hashSeed(id, 0);
+    const entry: Track = {
+      id,
+      title: 'resolving…',
+      artist: extractHost(url),
+      album: '',
+      adder: addedBy ?? 'you',
+      added: 'now',
+      service: 'spotify',
+      reactions: [],
+      seed,
+      status: 'resolving',
+      sourceUrl: url,
+    };
+    const list = pendingByPlaylistId.value[playlistId] ?? [];
+    pendingByPlaylistId.value[playlistId] = [...list, entry];
+    return id;
+  }
+
+  function markPendingFailed(playlistId: string, pendingId: string, msg: string) {
+    const list = pendingByPlaylistId.value[playlistId] ?? [];
+    pendingByPlaylistId.value[playlistId] = list.map((t) =>
+      t.id === pendingId
+        ? { ...t, status: 'failed', errorMessage: msg, title: 'couldn’t add' }
+        : t,
+    );
+  }
+
+  function removePending(playlistId: string, pendingId: string) {
+    const list = pendingByPlaylistId.value[playlistId] ?? [];
+    pendingByPlaylistId.value[playlistId] = list.filter((t) => t.id !== pendingId);
+  }
+
+  /** Public dismiss — used by the row's tap handler when status === 'failed'. */
+  function dismissPending(playlistId: string, pendingId: string) {
+    removePending(playlistId, pendingId);
+  }
+
+  function extractHost(url: string): string {
+    try {
+      return new URL(url).hostname.replace(/^www\./, '');
+    } catch {
+      return url.slice(0, 40);
+    }
   }
 
   async function leave(playlistId: string) {
@@ -266,6 +343,7 @@ export const usePlaylistsStore = defineStore('playlists', () => {
   function reset() {
     playlists.value = [];
     tracksByPlaylistId.value = {};
+    pendingByPlaylistId.value = {};
     loaded.value = false;
     error.value = null;
   }
@@ -275,6 +353,7 @@ export const usePlaylistsStore = defineStore('playlists', () => {
   return {
     playlists,
     tracksByPlaylistId,
+    pendingByPlaylistId,
     loaded,
     loading,
     error,
@@ -284,6 +363,7 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     create,
     joinByToken,
     ingestUrl,
+    dismissPending,
     leave,
     rotateInvite,
     deletePlaylist,

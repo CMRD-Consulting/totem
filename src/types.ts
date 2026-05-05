@@ -30,6 +30,14 @@ export interface Track {
   reactions: Reaction[];
   seed: number;
   artworkUrl?: string;
+  /** Client-only optimistic state.
+   *  - 'resolving' — ingest in flight, real row not yet present.
+   *  - 'failed' — ingest errored; user can dismiss. */
+  status?: 'resolving' | 'failed';
+  errorMessage?: string;
+  /** The original URL the user pasted, kept for failure UX (so we can
+   *  hint at what was being added). */
+  sourceUrl?: string;
 }
 
 export interface Playlist {

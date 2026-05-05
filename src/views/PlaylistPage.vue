@@ -41,7 +41,15 @@ const playlistId = computed(() => route.params.playlistId as string);
 const playlist = computed(
   () => playlists.playlists.find((g) => g.id === playlistId.value) ?? playlists.playlists[0],
 );
-const tracks = computed(() => playlists.tracksByPlaylistId[playlistId.value] ?? []);
+// Real tracks first, then any pending optimistic entries appended at the
+// bottom (they sort by add-time which is "now"). Failed entries stay until
+// dismissed; resolving entries vanish on success and are replaced by the
+// real row coming back from loadTracks.
+const tracks = computed(() => {
+  const real = playlists.tracksByPlaylistId[playlistId.value] ?? [];
+  const pending = playlists.pendingByPlaylistId[playlistId.value] ?? [];
+  return [...real, ...pending];
+});
 
 // Pick the most useful mirror to spotlight: enabled spotify > any enabled > any.
 // RLS scopes mirror_targets reads to user_id = auth.uid(), so this is "my" mirror.
@@ -384,6 +392,7 @@ async function onActionPicked(ev: CustomEvent) {
             :key="t.id"
             :track="t"
             @tap="router.push(`/p/${playlist.id}/t/${t.id}`)"
+            @dismiss="playlists.dismissPending(playlist.id, t.id)"
           />
           <div
             v-if="tracks.length === 0"

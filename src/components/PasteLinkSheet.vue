@@ -34,19 +34,14 @@ watch(
   },
 );
 
-async function send() {
+function send() {
   if (!isLikelyUrl.value || !props.playlistId || busy.value) return;
-  busy.value = true;
-  error.value = null;
-  try {
-    await playlists.ingestUrl(props.playlistId, url.value.trim());
-    saved.value = true;
-    setTimeout(() => emit('sent'), 700);
-  } catch (e) {
-    error.value = (e as Error).message;
-  } finally {
-    busy.value = false;
-  }
+  // Fire-and-forget: kick off ingest, then close the sheet so the user sees
+  // the resolving row appear in the playlist behind. Failures surface as a
+  // 'failed' track row, not in the sheet (which by then is dismissed).
+  playlists.ingestUrl(props.playlistId, url.value.trim());
+  saved.value = true;
+  setTimeout(() => emit('sent'), 250);
 }
 </script>
 
@@ -258,9 +253,8 @@ async function send() {
       >
         <template v-if="saved">
           <Icon name="check" :size="18" />
-          sent to {{ playlist?.name }}
+          adding to {{ playlist?.name }}
         </template>
-        <template v-else-if="busy">adding to playlist…</template>
         <template v-else>send to playlist</template>
       </button>
     </div>
