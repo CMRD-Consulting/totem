@@ -120,7 +120,7 @@ function resetEmail() {
     >
       <div style="text-align: center; max-width: 320px">
         <div :style="{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }">
-          <LogoMark :size="120" />
+          <LogoMark :size="100" />
           <Wordmark :size="64" />
         </div>
         <div
