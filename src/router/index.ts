@@ -7,7 +7,6 @@ import PlaylistPage from '@/views/PlaylistPage.vue';
 import TrackDetailPage from '@/views/TrackDetailPage.vue';
 import InvitePage from '@/views/InvitePage.vue';
 import MirrorPage from '@/views/MirrorPage.vue';
-import ShareSheetPage from '@/views/ShareSheetPage.vue';
 import SignInPage from '@/views/SignInPage.vue';
 import JoinPage from '@/views/JoinPage.vue';
 
@@ -29,10 +28,12 @@ const routes: Array<RouteRecordRaw> = [
   },
   { path: '/p/:groupId/invite', name: 'invite', component: InvitePage },
   { path: '/p/:groupId/mirror', name: 'mirror', component: MirrorPage },
+  // Legacy: /p/:groupId/share-sheet was a route in earlier iterations; the
+  // paste-link UI is now an IonModal hosted by PlaylistPage so the playlist
+  // stays visible underneath. Redirect old URLs back to the playlist.
   {
     path: '/p/:groupId/share-sheet',
-    name: 'share-sheet',
-    component: ShareSheetPage,
+    redirect: (to) => `/p/${to.params.groupId}`,
   },
   { path: '/i/:token', name: 'join', component: JoinPage },
   { path: '/settings', redirect: '/' },

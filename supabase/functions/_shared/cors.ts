@@ -13,10 +13,11 @@ export const corsHeaders: Record<string, string> = {
   "Access-Control-Max-Age": "86400",
 };
 
-/** Returns a 204 preflight response when the request is OPTIONS, otherwise null. */
+/** Returns the canonical preflight response when the request is OPTIONS, otherwise null.
+ *  Matches https://supabase.com/docs/guides/functions/cors verbatim ("ok" body, 200 status). */
 export function handlePreflight(req: Request): Response | null {
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
+    return new Response("ok", { headers: corsHeaders });
   }
   return null;
 }

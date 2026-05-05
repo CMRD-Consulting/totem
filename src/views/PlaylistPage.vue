@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { IonPage, onIonViewWillEnter } from '@ionic/vue';
+import { IonModal, IonPage, onIonViewWillEnter } from '@ionic/vue';
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import ActivityRow from '@/components/ActivityRow.vue';
@@ -7,6 +7,7 @@ import Avatar from '@/components/Avatar.vue';
 import AvatarStack from '@/components/AvatarStack.vue';
 import Icon from '@/components/Icon.vue';
 import IconButton from '@/components/IconButton.vue';
+import PasteLinkSheet from '@/components/PasteLinkSheet.vue';
 import ScreenScroll from '@/components/ScreenScroll.vue';
 import ServiceGlyph from '@/components/ServiceGlyph.vue';
 import Sigil from '@/components/Sigil.vue';
@@ -21,6 +22,7 @@ const router = useRouter();
 const route = useRoute();
 const playlists = usePlaylistsStore();
 const tab = ref<'songs' | 'activity' | 'members'>('songs');
+const shareSheetOpen = ref(false);
 
 const groupId = computed(() => route.params.groupId as string);
 const group = computed(
@@ -36,6 +38,11 @@ onIonViewWillEnter(async () => {
 watch(groupId, async (id) => {
   if (id) await playlists.loadTracks(id).catch(() => {});
 });
+
+function onSent() {
+  shareSheetOpen.value = false;
+  if (groupId.value) playlists.loadTracks(groupId.value).catch(() => {});
+}
 </script>
 
 <template>
@@ -120,7 +127,7 @@ watch(groupId, async (id) => {
 
           <!-- Action bar -->
           <div style="display: flex; gap: 8px; margin-top: 16px">
-            <button :style="pillBtn(true)" @click="router.push(`/p/${group.id}/share-sheet`)">
+            <button :style="pillBtn(true)" @click="shareSheetOpen = true">
               <Icon name="plus" :size="15" />
               <span>add a song</span>
             </button>
@@ -282,5 +289,21 @@ watch(groupId, async (id) => {
         </div>
       </ScreenScroll>
     </div>
+
+    <!-- Paste-link sheet — sits over the playlist instead of replacing it. -->
+    <ion-modal
+      :is-open="shareSheetOpen"
+      :initial-breakpoint="0.85"
+      :breakpoints="[0, 0.85]"
+      :handle="true"
+      @did-dismiss="shareSheetOpen = false"
+    >
+      <PasteLinkSheet
+        :group-id="groupId"
+        :is-open="shareSheetOpen"
+        @close="shareSheetOpen = false"
+        @sent="onSent"
+      />
+    </ion-modal>
   </ion-page>
 </template>
