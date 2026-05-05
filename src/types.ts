@@ -37,6 +37,7 @@ export interface Playlist {
   name: string;
   code: string;
   inviteToken: string;
+  createdBy?: string;
   members: string[];
   tracks: number;
   sigil: [number, number, number];

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { IonModal, IonPage, onIonViewWillEnter } from '@ionic/vue';
+import { IonActionSheet, IonModal, IonPage, onIonViewWillEnter } from '@ionic/vue';
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import ActivityRow from '@/components/ActivityRow.vue';
@@ -16,6 +16,7 @@ import TrackRow from '@/components/TrackRow.vue';
 import { pillBtn } from '@/components/pillBtn';
 import { ACTIVITY, SERVICES } from '@/data/mock';
 import { supabase } from '@/lib/supabase';
+import { useAuthStore } from '@/stores/auth';
 import { usePlaylistsStore } from '@/stores/playlists';
 import { usersById } from '@/store/users';
 import type { ServiceKey } from '@/types';
@@ -30,8 +31,10 @@ interface MyMirror {
 const router = useRouter();
 const route = useRoute();
 const playlists = usePlaylistsStore();
+const auth = useAuthStore();
 const tab = ref<'songs' | 'activity' | 'members'>('songs');
 const shareSheetOpen = ref(false);
+const actionSheetOpen = ref(false);
 const myMirrors = ref<MyMirror[]>([]);
 
 const playlistId = computed(() => route.params.playlistId as string);
@@ -99,6 +102,57 @@ function onSent() {
   shareSheetOpen.value = false;
   if (playlistId.value) playlists.loadTracks(playlistId.value).catch(() => {});
 }
+
+const isCreator = computed(
+  () => !!playlist.value && !!auth.user && playlist.value.createdBy === auth.user.id,
+);
+
+const actionButtons = computed(() => {
+  const buttons: { text: string; role?: 'destructive' | 'cancel'; data: string }[] = [];
+  if (isCreator.value) {
+    buttons.push({ text: 'Rotate invite link', data: 'rotate' });
+    buttons.push({
+      text: 'Delete playlist',
+      role: 'destructive',
+      data: 'delete',
+    });
+  } else {
+    buttons.push({
+      text: 'Leave playlist',
+      role: 'destructive',
+      data: 'leave',
+    });
+  }
+  buttons.push({ text: 'Cancel', role: 'cancel', data: 'cancel' });
+  return buttons;
+});
+
+async function onActionPicked(ev: CustomEvent) {
+  const data = (ev.detail.data as string) ?? 'cancel';
+  if (!playlist.value || data === 'cancel') return;
+  try {
+    if (data === 'rotate') {
+      const newToken = await playlists.rotateInvite(playlist.value.id);
+      window.alert(`New invite link generated. Code: TOTEM-${newToken.slice(0, 6).toUpperCase()}`);
+    } else if (data === 'leave') {
+      if (!window.confirm(`Leave "${playlist.value.name}"?`)) return;
+      await playlists.leave(playlist.value.id);
+      router.replace('/');
+    } else if (data === 'delete') {
+      if (
+        !window.confirm(
+          `Delete "${playlist.value.name}"? This removes the playlist for everyone.`,
+        )
+      ) {
+        return;
+      }
+      await playlists.deletePlaylist(playlist.value.id);
+      router.replace('/');
+    }
+  } catch (e) {
+    window.alert((e as Error).message);
+  }
+}
 </script>
 
 <template>
@@ -118,7 +172,7 @@ function onSent() {
           <IconButton name="back" @click="router.push('/')" />
         </template>
         <template #right>
-          <IconButton name="more" />
+          <IconButton name="more" @click="actionSheetOpen = true" />
         </template>
       </TopBar>
 
@@ -415,5 +469,12 @@ function onSent() {
         @sent="onSent"
       />
     </ion-modal>
+
+    <ion-action-sheet
+      :is-open="actionSheetOpen"
+      :buttons="actionButtons"
+      :header="playlist?.name"
+      @did-dismiss="actionSheetOpen = false; onActionPicked($event as CustomEvent)"
+    />
   </ion-page>
 </template>

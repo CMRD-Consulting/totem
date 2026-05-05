@@ -10,6 +10,7 @@ interface PlaylistRow {
   name: string;
   description: string | null;
   invite_token: string;
+  created_by: string;
   created_at: string;
   members: { user_id: string; profiles: { display_name: string } | null }[];
   tracks: { count: number }[];
@@ -68,6 +69,7 @@ function rowToPlaylist(row: PlaylistRow, meId: string | undefined): Playlist {
     name: row.name,
     code: 'TOTEM-' + row.invite_token.slice(0, 6).toUpperCase(),
     inviteToken: row.invite_token,
+    createdBy: row.created_by,
     members: ordered,
     tracks: row.tracks[0]?.count ?? 0,
     sigil: [
@@ -111,7 +113,7 @@ export const usePlaylistsStore = defineStore('playlists', () => {
         .from('playlists')
         .select(
           `
-          id, name, description, invite_token, created_at,
+          id, name, description, invite_token, created_by, created_at,
           members:playlist_members ( user_id, profiles ( display_name ) ),
           tracks:playlist_tracks ( count )
         `,
@@ -220,6 +222,47 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     await loadTracks(playlistId);
   }
 
+  async function leave(playlistId: string) {
+    const { data: sess } = await supabase.auth.getSession();
+    const meId = sess.session?.user.id;
+    if (!meId) throw new Error('Not signed in');
+    const { error: err } = await supabase
+      .from('playlist_members')
+      .delete()
+      .eq('playlist_id', playlistId)
+      .eq('user_id', meId);
+    if (err) throw err;
+    playlists.value = playlists.value.filter((p) => p.id !== playlistId);
+    delete tracksByPlaylistId.value[playlistId];
+  }
+
+  async function rotateInvite(playlistId: string) {
+    const { data, error: err } = await supabase.rpc('rotate_invite_token', {
+      p_playlist_id: playlistId,
+    });
+    if (err) throw err;
+    const newToken = data as string;
+    // Patch the in-memory copy so the InvitePage reflects the new code immediately.
+    const i = playlists.value.findIndex((p) => p.id === playlistId);
+    if (i !== -1) {
+      playlists.value[i] = {
+        ...playlists.value[i],
+        inviteToken: newToken,
+        code: 'TOTEM-' + newToken.slice(0, 6).toUpperCase(),
+      };
+    }
+    return newToken;
+  }
+
+  async function deletePlaylist(playlistId: string) {
+    const { error: err } = await supabase.rpc('delete_playlist', {
+      p_playlist_id: playlistId,
+    });
+    if (err) throw err;
+    playlists.value = playlists.value.filter((p) => p.id !== playlistId);
+    delete tracksByPlaylistId.value[playlistId];
+  }
+
   function reset() {
     playlists.value = [];
     tracksByPlaylistId.value = {};
@@ -241,6 +284,9 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     create,
     joinByToken,
     ingestUrl,
+    leave,
+    rotateInvite,
+    deletePlaylist,
     reset,
   };
 });
