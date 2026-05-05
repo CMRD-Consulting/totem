@@ -23,3 +23,11 @@ withDefaults(
     v-html="svg"
   />
 </template>
+
+<style scoped>
+span :deep(svg) {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+</style>
