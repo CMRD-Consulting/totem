@@ -6,6 +6,7 @@ import ActivityRow from '@/components/ActivityRow.vue';
 import AvatarStack from '@/components/AvatarStack.vue';
 import Icon from '@/components/Icon.vue';
 import IconButton from '@/components/IconButton.vue';
+import LogoMark from '@/components/LogoMark.vue';
 import ScreenScroll from '@/components/ScreenScroll.vue';
 import SectionHeader from '@/components/SectionHeader.vue';
 import Sigil from '@/components/Sigil.vue';
@@ -57,7 +58,10 @@ async function onSettings() {
 
       <ScreenScroll>
         <div style="padding: 8px 22px 22px">
-          <Wordmark :size="42" />
+          <div :style="{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }">
+            <LogoMark :size="64" />
+            <Wordmark :size="42" />
+          </div>
           <div
             :style="{
               fontFamily: 'Inter',
