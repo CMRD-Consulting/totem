@@ -45,6 +45,22 @@ export function useRealtimePlaylist(playlistId: Ref<string | undefined>) {
           playlists.loadTracks(id).catch(() => {});
         },
       )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'track_reactions',
+        },
+        () => {
+          // Reactions don't carry playlist_id, only playlist_track_id, and
+          // Realtime's filter syntax doesn't support joined-table filters.
+          // We refetch the current playlist's reactions on any reaction
+          // change — RLS already scopes events to tracks the user can see,
+          // so the volume is bounded by the user's playlist memberships.
+          playlists.loadReactions(id).catch(() => {});
+        },
+      )
       .subscribe();
   }
 

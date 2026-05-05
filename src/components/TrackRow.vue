@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { SERVICES } from '@/data/mock';
-import { state, toggleReaction } from '@/store/state';
+import { state } from '@/store/state';
 import { usersById } from '@/store/users';
 import { useAuthStore } from '@/stores/auth';
+import { usePlaylistsStore } from '@/stores/playlists';
 import type { Track } from '@/types';
 import AlbumArt from './AlbumArt.vue';
 import Avatar from './Avatar.vue';
@@ -23,13 +24,19 @@ const props = withDefaults(
 const emit = defineEmits<{ tap: []; dismiss: [] }>();
 
 const auth = useAuthStore();
+const playlists = usePlaylistsStore();
 const adder = computed(() => usersById[props.track.adder]);
+
+// Real reactions live in the store keyed by playlist_track id; fall back to
+// the (mock) Track.reactions array for non-DB tracks (mock demo data).
+const reactions = computed(
+  () => playlists.reactionsByTrackId[props.track.id] ?? props.track.reactions,
+);
+const myUserId = computed(() => auth.user?.id ?? state.meId);
 const myReactions = computed(
   () =>
     new Set(
-      props.track.reactions
-        .filter((r) => r.by.includes(state.meId))
-        .map((r) => r.e),
+      reactions.value.filter((r) => r.by.includes(myUserId.value)).map((r) => r.e),
     ),
 );
 const padY = computed(() => (props.density === 'compact' ? 8 : 12));
@@ -49,7 +56,10 @@ const notOnMyService = computed(() => {
 
 function onReact(e: MouseEvent, emoji: string) {
   e.stopPropagation();
-  toggleReaction(props.track.id, emoji);
+  // Real tracks → DB toggle. Pending/mock rows have no DB id; skip silently.
+  if (!props.track.status) {
+    playlists.toggleReaction(props.track.id, emoji).catch(() => {});
+  }
 }
 
 function onClickRow() {
@@ -239,11 +249,11 @@ function onClickRow() {
 
       <!-- Reactions only on normal tracks -->
       <div
-        v-if="!track.status && track.reactions.length > 0"
+        v-if="!track.status && reactions.length > 0"
         style="display: flex; gap: 4px; margin-top: 7px; flex-wrap: wrap"
       >
         <ReactionPill
-          v-for="(r, i) in track.reactions"
+          v-for="(r, i) in reactions"
           :key="i"
           :emoji="r.e"
           :count="r.by.length"

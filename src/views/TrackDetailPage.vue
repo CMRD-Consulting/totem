@@ -11,7 +11,8 @@ import ScreenScroll from '@/components/ScreenScroll.vue';
 import ServiceGlyph from '@/components/ServiceGlyph.vue';
 import TopBar from '@/components/TopBar.vue';
 import { SERVICES } from '@/data/mock';
-import { state, toggleReaction } from '@/store/state';
+import { state } from '@/store/state';
+import { useAuthStore } from '@/stores/auth';
 import { usePlaylistsStore } from '@/stores/playlists';
 import { usersById } from '@/store/users';
 import type { ServiceKey } from '@/types';
@@ -19,6 +20,7 @@ import type { ServiceKey } from '@/types';
 const router = useRouter();
 const route = useRoute();
 const playlists = usePlaylistsStore();
+const auth = useAuthStore();
 
 const playlistId = computed(() => route.params.playlistId as string);
 const trackId = computed(() => route.params.trackId as string);
@@ -29,14 +31,23 @@ const track = computed(() => {
   return real ?? state.tracks.find((t) => t.id === trackId.value) ?? state.tracks[0];
 });
 const adder = computed(() => usersById[track.value.adder]);
+const reactions = computed(
+  () => playlists.reactionsByTrackId[track.value.id] ?? track.value.reactions,
+);
+const myUserId = computed(() => auth.user?.id ?? state.meId);
 const myReactions = computed(
   () =>
-    new Set(
-      track.value.reactions
-        .filter((r) => r.by.includes(state.meId))
-        .map((r) => r.e),
-    ),
+    new Set(reactions.value.filter((r) => r.by.includes(myUserId.value)).map((r) => r.e)),
 );
+
+function onReact(emoji: string) {
+  // Real tracks (DB-backed): hit the store. Mock fallback: silently no-op
+  // since reactions on mock tracks were a v0-design-only concept.
+  const real = playlists.tracksByPlaylistId[playlistId.value]?.find(
+    (t) => t.id === track.value.id,
+  );
+  if (real) playlists.toggleReaction(track.value.id, emoji).catch(() => {});
+}
 
 const quickReacts = ['🔥', '❤️', '😭', '👑', '💔', '🌙'];
 const services: ServiceKey[] = ['spotify', 'apple', 'youtube'];
@@ -192,7 +203,7 @@ const services: ServiceKey[] = ['spotify', 'apple', 'youtube'];
             <button
               v-for="e in quickReacts"
               :key="e"
-              @click="toggleReaction(track.id, e)"
+              @click="onReact(e)"
               :style="{
                 all: 'unset',
                 cursor: 'pointer',
@@ -211,7 +222,7 @@ const services: ServiceKey[] = ['spotify', 'apple', 'youtube'];
             >{{ e }}</button>
           </div>
           <div
-            v-if="track.reactions.length > 0"
+            v-if="reactions.length > 0"
             style="
               margin-top: 14px;
               padding: 10px 12px;
@@ -220,7 +231,7 @@ const services: ServiceKey[] = ['spotify', 'apple', 'youtube'];
             "
           >
             <div
-              v-for="(r, i) in track.reactions"
+              v-for="(r, i) in reactions"
               :key="i"
               style="display: flex; align-items: center; gap: 8px; padding: 4px 0"
             >

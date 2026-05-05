@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { env } from '@/lib/env';
 import { supabase } from '@/lib/supabase';
 import { registerProfile } from '@/store/users';
-import type { ActivityItem, Playlist, ServiceKey, Track } from '@/types';
+import type { ActivityItem, Playlist, Reaction, ServiceKey, Track } from '@/types';
 
 interface PlaylistRow {
   id: string;
@@ -41,6 +41,12 @@ interface ActivityFeedRow {
   track: { title: string; artist: string } | null;
   playlist: { name: string } | null;
   added_by_profile: { display_name: string } | null;
+}
+
+interface ReactionRow {
+  playlist_track_id: string;
+  user_id: string;
+  emoji: string;
 }
 
 function hashSeed(s: string, salt: number): number {
@@ -117,6 +123,10 @@ export const usePlaylistsStore = defineStore('playlists', () => {
   // tracks until either the DB row appears (success → entry is removed) or
   // the user dismisses the failure.
   const pendingByPlaylistId = ref<Record<string, Track[]>>({});
+  // Reactions keyed by playlist_track_id → array of {emoji, by[user_id]}.
+  // Kept separate from Track objects so realtime updates don't have to walk
+  // the per-playlist track list to find the right row.
+  const reactionsByTrackId = ref<Record<string, Reaction[]>>({});
   const recentActivity = ref<ActivityItem[]>([]);
   const loaded = ref(false);
   const loading = ref(false);
@@ -184,6 +194,118 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     }
 
     tracksByPlaylistId.value[playlistId] = rows.map(rowToTrack);
+    // Refresh reactions in tandem so the row's reaction pills come from a
+    // consistent snapshot.
+    await loadReactions(playlistId);
+  }
+
+  /** Load all reactions for a playlist, grouped by playlist_track_id + emoji. */
+  async function loadReactions(playlistId: string) {
+    // Use the embedded select to scope to playlist_tracks.playlist_id without
+    // a separate IN clause. The !inner join filters out reactions on tracks
+    // that don't belong to the given playlist.
+    const { data, error: err } = await supabase
+      .from('track_reactions')
+      .select(
+        `
+        playlist_track_id, user_id, emoji,
+        playlist_track:playlist_tracks!inner ( playlist_id )
+      `,
+      )
+      .eq('playlist_track.playlist_id', playlistId);
+
+    if (err) throw err;
+    const rows = (data ?? []) as unknown as ReactionRow[];
+
+    const byTrack: Record<string, Map<string, string[]>> = {};
+    for (const r of rows) {
+      const map = (byTrack[r.playlist_track_id] ??= new Map());
+      const arr = map.get(r.emoji) ?? [];
+      arr.push(r.user_id);
+      map.set(r.emoji, arr);
+    }
+    // Materialize: for each track, replace the live array — assignment instead
+    // of mutation keeps Vue's reactivity granularity at the row level.
+    for (const tid of Object.keys(byTrack)) {
+      const reactions: Reaction[] = [];
+      byTrack[tid].forEach((users, emoji) => {
+        reactions.push({ e: emoji, by: users });
+      });
+      reactionsByTrackId.value[tid] = reactions;
+    }
+    // Tracks with no reactions: clear stale entries in case a reaction was
+    // removed since last load.
+    const seen = new Set(Object.keys(byTrack));
+    for (const existing of Object.keys(reactionsByTrackId.value)) {
+      const t = (tracksByPlaylistId.value[playlistId] ?? []).find((x) => x.id === existing);
+      if (t && !seen.has(existing)) {
+        reactionsByTrackId.value[existing] = [];
+      }
+    }
+  }
+
+  /** Add my reaction to a track. Idempotent — relies on PK. */
+  async function addReaction(playlistTrackId: string, emoji: string) {
+    const { data: sess } = await supabase.auth.getSession();
+    const meId = sess.session?.user.id;
+    if (!meId) throw new Error('Not signed in');
+    // Optimistic merge into local state.
+    const list = reactionsByTrackId.value[playlistTrackId] ?? [];
+    const existing = list.find((r) => r.e === emoji);
+    if (existing) {
+      if (!existing.by.includes(meId)) existing.by = [...existing.by, meId];
+    } else {
+      reactionsByTrackId.value[playlistTrackId] = [
+        ...list,
+        { e: emoji, by: [meId] },
+      ];
+    }
+    const { error } = await supabase.from('track_reactions').insert({
+      playlist_track_id: playlistTrackId,
+      user_id: meId,
+      emoji,
+    });
+    // 23505 (unique violation) = already reacted; treat as success since
+    // optimistic merge above already covered it.
+    if (error && (error as { code?: string }).code !== '23505') throw error;
+  }
+
+  /** Remove my reaction from a track. */
+  async function removeReaction(playlistTrackId: string, emoji: string) {
+    const { data: sess } = await supabase.auth.getSession();
+    const meId = sess.session?.user.id;
+    if (!meId) throw new Error('Not signed in');
+    // Optimistic remove.
+    const list = reactionsByTrackId.value[playlistTrackId] ?? [];
+    const next = list
+      .map((r) =>
+        r.e === emoji ? { ...r, by: r.by.filter((u) => u !== meId) } : r,
+      )
+      .filter((r) => r.by.length > 0);
+    reactionsByTrackId.value[playlistTrackId] = next;
+
+    const { error } = await supabase
+      .from('track_reactions')
+      .delete()
+      .eq('playlist_track_id', playlistTrackId)
+      .eq('user_id', meId)
+      .eq('emoji', emoji);
+    if (error) throw error;
+  }
+
+  /** Convenience: toggle based on whether I'm currently in the by[] list. */
+  async function toggleReaction(playlistTrackId: string, emoji: string) {
+    const { data: sess } = await supabase.auth.getSession();
+    const meId = sess.session?.user.id;
+    if (!meId) return;
+    const existing = (reactionsByTrackId.value[playlistTrackId] ?? []).find(
+      (r) => r.e === emoji,
+    );
+    if (existing && existing.by.includes(meId)) {
+      await removeReaction(playlistTrackId, emoji);
+    } else {
+      await addReaction(playlistTrackId, emoji);
+    }
   }
 
   async function create(name: string, description: string | null = null) {
@@ -401,6 +523,7 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     playlists.value = [];
     tracksByPlaylistId.value = {};
     pendingByPlaylistId.value = {};
+    reactionsByTrackId.value = {};
     recentActivity.value = [];
     loaded.value = false;
     error.value = null;
@@ -412,6 +535,7 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     playlists,
     tracksByPlaylistId,
     pendingByPlaylistId,
+    reactionsByTrackId,
     recentActivity,
     loaded,
     loading,
@@ -419,11 +543,15 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     isEmpty,
     loadList,
     loadTracks,
+    loadReactions,
     loadRecentActivity,
     create,
     joinByToken,
     ingestUrl,
     dismissPending,
+    addReaction,
+    removeReaction,
+    toggleReaction,
     leave,
     rotateInvite,
     deletePlaylist,
