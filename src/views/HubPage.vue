@@ -16,7 +16,6 @@ import SectionHeader from '@/components/SectionHeader.vue';
 import Sigil from '@/components/Sigil.vue';
 import TopBar from '@/components/TopBar.vue';
 import Wordmark from '@/components/Wordmark.vue';
-import { ACTIVITY } from '@/data/mock';
 import { useAuthStore } from '@/stores/auth';
 import { usePlaylistsStore } from '@/stores/playlists';
 
@@ -26,11 +25,15 @@ const auth = useAuthStore();
 
 onIonViewWillEnter(() => {
   playlists.loadList().catch(() => {});
+  playlists.loadRecentActivity().catch(() => {});
 });
 
 async function onRefresh(event: CustomEvent) {
   try {
-    await playlists.loadList();
+    await Promise.all([
+      playlists.loadList(),
+      playlists.loadRecentActivity(),
+    ]);
   } finally {
     (event.target as HTMLIonRefresherElement).complete();
   }
@@ -206,10 +209,16 @@ async function onSettings() {
           </div>
         </div>
 
-        <SectionHeader :style-override="{ marginTop: '24px' }">recent activity</SectionHeader>
-        <div style="padding: 0 22px">
-          <ActivityRow v-for="a in ACTIVITY.slice(0, 4)" :key="a.id" :item="a" />
-        </div>
+        <template v-if="playlists.recentActivity.length > 0">
+          <SectionHeader :style-override="{ marginTop: '24px' }">recent activity</SectionHeader>
+          <div style="padding: 0 22px">
+            <ActivityRow
+              v-for="a in playlists.recentActivity.slice(0, 8)"
+              :key="a.id"
+              :item="a"
+            />
+          </div>
+        </template>
       </ion-content>
     </div>
   </ion-page>

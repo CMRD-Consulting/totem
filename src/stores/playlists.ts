@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { env } from '@/lib/env';
 import { supabase } from '@/lib/supabase';
 import { registerProfile } from '@/store/users';
-import type { Playlist, ServiceKey, Track } from '@/types';
+import type { ActivityItem, Playlist, ServiceKey, Track } from '@/types';
 
 interface PlaylistRow {
   id: string;
@@ -31,6 +31,15 @@ interface PlaylistTrackRow {
     apple_music_id: string | null;
     youtube_music_id: string | null;
   };
+  added_by_profile: { display_name: string } | null;
+}
+
+interface ActivityFeedRow {
+  id: string;
+  added_at: string;
+  added_by: string;
+  track: { title: string; artist: string } | null;
+  playlist: { name: string } | null;
   added_by_profile: { display_name: string } | null;
 }
 
@@ -103,6 +112,7 @@ export const usePlaylistsStore = defineStore('playlists', () => {
   // tracks until either the DB row appears (success → entry is removed) or
   // the user dismisses the failure.
   const pendingByPlaylistId = ref<Record<string, Track[]>>({});
+  const recentActivity = ref<ActivityItem[]>([]);
   const loaded = ref(false);
   const loading = ref(false);
   const error = ref<string | null>(null);
@@ -299,6 +309,48 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     }
   }
 
+  /**
+   * Load recent track adds across every playlist the user belongs to.
+   * RLS on playlist_tracks scopes the result to playlists I'm a member of,
+   * so no explicit user_id filter is needed.
+   */
+  async function loadRecentActivity(limit = 12) {
+    const { data, error: err } = await supabase
+      .from('playlist_tracks')
+      .select(
+        `
+        id, added_at, added_by,
+        track:tracks ( title, artist ),
+        playlist:playlists ( name ),
+        added_by_profile:profiles!playlist_tracks_added_by_fkey ( display_name )
+      `,
+      )
+      .order('added_at', { ascending: false })
+      .limit(limit);
+
+    if (err) throw err;
+    const rows = (data ?? []) as unknown as ActivityFeedRow[];
+
+    for (const row of rows) {
+      if (row.added_by_profile?.display_name) {
+        registerProfile(row.added_by, row.added_by_profile.display_name);
+      }
+    }
+
+    recentActivity.value = rows
+      .filter((r) => r.track)
+      .map<ActivityItem>((r) => ({
+        id: r.id,
+        kind: 'add',
+        who: r.added_by,
+        what: r.track!.title,
+        detail: r.playlist
+          ? `${r.track!.artist} · in ${r.playlist.name}`
+          : r.track!.artist,
+        when: relTime(r.added_at),
+      }));
+  }
+
   async function leave(playlistId: string) {
     const { data: sess } = await supabase.auth.getSession();
     const meId = sess.session?.user.id;
@@ -344,6 +396,7 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     playlists.value = [];
     tracksByPlaylistId.value = {};
     pendingByPlaylistId.value = {};
+    recentActivity.value = [];
     loaded.value = false;
     error.value = null;
   }
@@ -354,12 +407,14 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     playlists,
     tracksByPlaylistId,
     pendingByPlaylistId,
+    recentActivity,
     loaded,
     loading,
     error,
     isEmpty,
     loadList,
     loadTracks,
+    loadRecentActivity,
     create,
     joinByToken,
     ingestUrl,
