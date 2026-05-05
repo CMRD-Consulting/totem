@@ -5,19 +5,24 @@
 // nonce → state cache table to avoid passing user credentials through a third
 // party. Acceptable for v0 because state stays HTTPS-only and the JWT is short-lived.
 
+import { corsResponse, handlePreflight } from "../_shared/cors.ts";
+
 const SPOTIFY_AUTHORIZE = "https://accounts.spotify.com/authorize";
 const SCOPES = "playlist-modify-private playlist-modify-public user-read-private";
 
 Deno.serve((req) => {
+  const preflight = handlePreflight(req);
+  if (preflight) return preflight;
+
   const url = new URL(req.url);
   const playlistId = url.searchParams.get("playlist_id");
   const userJwt = url.searchParams.get("jwt");
   if (!playlistId || !userJwt) {
-    return new Response("Missing playlist_id or jwt", { status: 400 });
+    return corsResponse("Missing playlist_id or jwt", { status: 400 });
   }
 
   const clientId = Deno.env.get("SPOTIFY_CLIENT_ID");
-  if (!clientId) return new Response("SPOTIFY_CLIENT_ID not set", { status: 500 });
+  if (!clientId) return corsResponse("SPOTIFY_CLIENT_ID not set", { status: 500 });
 
   const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/oauth-callback`;
   const state = btoa(JSON.stringify({ playlist_id: playlistId, jwt: userJwt }));

@@ -10,6 +10,7 @@ import {
   removeTrackFromPlaylist,
 } from "../_shared/spotify.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
+import { corsResponse, handlePreflight } from "../_shared/cors.ts";
 
 export function isTokenExpired(expiresAt: string): boolean {
   return new Date(expiresAt).getTime() <= Date.now() + 60_000;
@@ -22,7 +23,10 @@ interface Payload {
 }
 
 Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+  const preflight = handlePreflight(req);
+  if (preflight) return preflight;
+
+  if (req.method !== "POST") return corsResponse("Method not allowed", { status: 405 });
 
   const payload = await req.json() as Payload;
   const admin = supabaseAdmin();
@@ -32,7 +36,7 @@ Deno.serve(async (req) => {
     .select("spotify_id")
     .eq("id", payload.track_id)
     .single();
-  if (trackErr || !track) return new Response("Track not found", { status: 404 });
+  if (trackErr || !track) return corsResponse("Track not found", { status: 404 });
 
   const { data: targets, error: targetsErr } = await admin
     .from("mirror_targets")
@@ -40,8 +44,8 @@ Deno.serve(async (req) => {
     .eq("playlist_id", payload.playlist_id)
     .eq("service", "spotify")
     .eq("enabled", true);
-  if (targetsErr) return new Response(targetsErr.message, { status: 500 });
-  if (!targets?.length) return new Response("No mirror targets", { status: 200 });
+  if (targetsErr) return corsResponse(targetsErr.message, { status: 500 });
+  if (!targets?.length) return corsResponse("No mirror targets", { status: 200 });
 
   const results: { target: string; ok: boolean; error?: string }[] = [];
 
@@ -107,7 +111,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  return new Response(JSON.stringify({ results }), {
+  return corsResponse(JSON.stringify({ results }), {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });

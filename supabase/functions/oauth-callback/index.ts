@@ -4,16 +4,20 @@
 
 import { exchangeCode, getCurrentUser, createPlaylist } from "../_shared/spotify.ts";
 import { supabaseAsUser, supabaseAdmin } from "../_shared/supabaseAdmin.ts";
+import { corsResponse, handlePreflight } from "../_shared/cors.ts";
 
 export function decodeState(state: string): { playlist_id: string; jwt: string } {
   return JSON.parse(atob(state));
 }
 
 Deno.serve(async (req) => {
+  const preflight = handlePreflight(req);
+  if (preflight) return preflight;
+
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
-  if (!code || !state) return new Response("Missing code or state", { status: 400 });
+  if (!code || !state) return corsResponse("Missing code or state", { status: 400 });
 
   const { playlist_id, jwt } = decodeState(state);
   const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/oauth-callback`;
@@ -23,14 +27,14 @@ Deno.serve(async (req) => {
 
   const userClient = supabaseAsUser(jwt);
   const { data: { user } } = await userClient.auth.getUser();
-  if (!user) return new Response("Unauthorized", { status: 401 });
+  if (!user) return corsResponse("Unauthorized", { status: 401 });
 
   const { data: playlistRow } = await userClient
     .from("playlists")
     .select("id, name, description")
     .eq("id", playlist_id)
     .single();
-  if (!playlistRow) return new Response("Playlist not accessible", { status: 403 });
+  if (!playlistRow) return corsResponse("Playlist not accessible", { status: 403 });
 
   const spotifyPlaylist = await createPlaylist(
     tokens.access_token,
@@ -61,7 +65,7 @@ Deno.serve(async (req) => {
 
   // v0 limitation: existing playlist tracks are not backfilled into the new
   // Spotify mirror — only future inserts will sync via the trigger.
-  return new Response(
+  return corsResponse(
     `<!doctype html><html><body style="font-family: -apple-system, sans-serif; padding: 40px; text-align: center;">
       <p>Mirror connected. You can close this window.</p>
       <script>window.close();</script>

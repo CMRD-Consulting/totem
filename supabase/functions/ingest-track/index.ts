@@ -1,5 +1,6 @@
 import { resolveSonglink, SonglinkResult } from "../_shared/songlink.ts";
 import { supabaseAsUser, supabaseAdmin } from "../_shared/supabaseAdmin.ts";
+import { corsResponse, handlePreflight } from "../_shared/cors.ts";
 
 interface TrackRow {
   isrc: string | null;
@@ -52,17 +53,22 @@ async function findExistingTrackId(
 }
 
 Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+  const preflight = handlePreflight(req);
+  if (preflight) return preflight;
+
+  if (req.method !== "POST") {
+    return corsResponse("Method not allowed", { status: 405 });
+  }
 
   const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
-    return new Response("Unauthorized", { status: 401 });
+    return corsResponse("Unauthorized", { status: 401 });
   }
   const jwt = authHeader.slice(7);
 
   const body = await req.json().catch(() => null);
   if (!body?.url || !body?.playlist_id) {
-    return new Response("Missing url or playlist_id", { status: 400 });
+    return corsResponse("Missing url or playlist_id", { status: 400 });
   }
 
   // Membership check via user-scoped client (RLS enforces it).
@@ -72,7 +78,9 @@ Deno.serve(async (req) => {
     .select("playlist_id")
     .eq("playlist_id", body.playlist_id)
     .maybeSingle();
-  if (!membership) return new Response("Not a member of this playlist", { status: 403 });
+  if (!membership) {
+    return corsResponse("Not a member of this playlist", { status: 403 });
+  }
 
   // Resolve via Songlink.
   let songlink: SonglinkResult;
@@ -80,7 +88,10 @@ Deno.serve(async (req) => {
     songlink = await resolveSonglink(body.url);
   } catch (err) {
     console.error("Songlink failed", err);
-    return new Response(`Could not resolve URL: ${(err as Error).message}`, { status: 502 });
+    return corsResponse(
+      `Could not resolve URL: ${(err as Error).message}`,
+      { status: 502 },
+    );
   }
 
   const trackRow = resolveTrackRow(songlink);
@@ -91,7 +102,7 @@ Deno.serve(async (req) => {
     const { data, error } = await admin.from("tracks").insert(trackRow).select("id").single();
     if (error) {
       console.error("track insert failed", error);
-      return new Response(`Track insert failed: ${error.message}`, { status: 500 });
+      return corsResponse(`Track insert failed: ${error.message}`, { status: 500 });
     }
     trackId = data.id;
   }
@@ -108,7 +119,7 @@ Deno.serve(async (req) => {
 
   // Get the user id from JWT.
   const { data: { user } } = await userClient.auth.getUser();
-  if (!user) return new Response("Unauthorized", { status: 401 });
+  if (!user) return corsResponse("Unauthorized", { status: 401 });
 
   const { error: insertErr } = await admin.from("playlist_tracks").insert({
     playlist_id: body.playlist_id,
@@ -118,10 +129,10 @@ Deno.serve(async (req) => {
   });
   if (insertErr) {
     console.error("playlist_track insert failed", insertErr);
-    return new Response(`Insert failed: ${insertErr.message}`, { status: 500 });
+    return corsResponse(`Insert failed: ${insertErr.message}`, { status: 500 });
   }
 
-  return new Response(JSON.stringify({ track_id: trackId }), {
+  return corsResponse(JSON.stringify({ track_id: trackId }), {
     status: 201,
     headers: { "Content-Type": "application/json" },
   });

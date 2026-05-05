@@ -186,15 +186,37 @@ export const usePlaylistsStore = defineStore('playlists', () => {
   async function ingestUrl(playlistId: string, url: string) {
     const { data: sess } = await supabase.auth.getSession();
     if (!sess.session) throw new Error('Not signed in');
-    const res = await fetch(`${env.supabaseUrl}/functions/v1/ingest-track`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${sess.session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ playlist_id: playlistId, url }),
-    });
-    if (!res.ok) throw new Error(await res.text());
+
+    let res: Response;
+    try {
+      res = await fetch(`${env.supabaseUrl}/functions/v1/ingest-track`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${sess.session.access_token}`,
+          'Content-Type': 'application/json',
+          apikey: env.supabaseAnonKey,
+        },
+        body: JSON.stringify({ playlist_id: playlistId, url }),
+      });
+    } catch (e) {
+      // Network error / blocked CORS preflight — fetch never got a response.
+      throw new Error(
+        `Couldn't reach ingest-track. Likely the function isn't deployed yet ` +
+          `or CORS is blocking the request. (${(e as Error).message})`,
+      );
+    }
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      if (res.status === 404) {
+        throw new Error(
+          'ingest-track edge function returned 404. ' +
+            'Run `supabase functions deploy ingest-track` to deploy it.',
+        );
+      }
+      throw new Error(`${res.status}: ${text || res.statusText}`);
+    }
+
     await loadTracks(playlistId);
   }
 
