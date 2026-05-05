@@ -57,23 +57,23 @@ async function onSettings() {
       </TopBar>
 
       <ScreenScroll>
-        <div style="padding: 8px 22px 22px">
-          <div :style="{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }">
-            <LogoMark :size="64" />
+        <div :style="{ padding: '8px 22px 22px', display: 'flex', alignItems: 'flex-start', gap: '14px' }">
+          <LogoMark :size="64" />
+          <div>
             <Wordmark :size="42" />
-          </div>
-          <div
-            :style="{
-              fontFamily: 'Inter',
-              fontSize: '13px',
-              color: 'var(--muted)',
-              marginTop: '10px',
-              lineHeight: 1.4,
-              maxWidth: '280px',
-            }"
-          >
-            Shared playlists across Spotify, Apple Music, and YouTube Music.
-            With the people you'd burn a CD for.
+            <div
+              :style="{
+                fontFamily: 'Inter',
+                fontSize: '13px',
+                color: 'var(--muted)',
+                marginTop: '10px',
+                lineHeight: 1.4,
+                maxWidth: '280px',
+              }"
+            >
+              Shared playlists across Spotify, Apple Music, and YouTube Music.
+              With the people you'd burn a CD for.
+            </div>
           </div>
         </div>
 
