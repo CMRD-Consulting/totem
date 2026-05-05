@@ -58,7 +58,7 @@ async function onSettings() {
 
       <ScreenScroll>
         <div :style="{ padding: '8px 22px 22px', display: 'flex', alignItems: 'center', gap: '14px' }">
-          <LogoMark :size="72" />
+          <LogoMark :size="80" />
           <div>
             <Wordmark :size="42" />
             <div
