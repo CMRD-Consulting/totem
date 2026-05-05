@@ -30,6 +30,10 @@ export interface Track {
   reactions: Reaction[];
   seed: number;
   artworkUrl?: string;
+  /** Per-service availability. A null means the track has no link on that
+   *  service (the rest still work). Used to drive the "not on your service"
+   *  badge and to pick the right deep-link URL when tapped. */
+  serviceIds?: Partial<Record<ServiceKey, string | null>>;
   /** Client-only optimistic state.
    *  - 'resolving' — ingest in flight, real row not yet present.
    *  - 'failed' — ingest errored; user can dismiss. */

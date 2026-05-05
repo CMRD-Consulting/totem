@@ -101,6 +101,11 @@ function rowToTrack(row: PlaylistTrackRow): Track {
     reactions: [],
     seed: hashSeed(row.track.id, 0),
     artworkUrl: row.track.artwork_url ?? undefined,
+    serviceIds: {
+      spotify: row.track.spotify_id,
+      apple: row.track.apple_music_id,
+      youtube: row.track.youtube_music_id,
+    },
   };
 }
 

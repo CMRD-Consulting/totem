@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { SERVICES } from '@/data/mock';
 import { state, toggleReaction } from '@/store/state';
 import { usersById } from '@/store/users';
+import { useAuthStore } from '@/stores/auth';
 import type { Track } from '@/types';
 import AlbumArt from './AlbumArt.vue';
 import Avatar from './Avatar.vue';
@@ -21,6 +22,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{ tap: []; dismiss: [] }>();
 
+const auth = useAuthStore();
 const adder = computed(() => usersById[props.track.adder]);
 const myReactions = computed(
   () =>
@@ -32,6 +34,18 @@ const myReactions = computed(
 );
 const padY = computed(() => (props.density === 'compact' ? 8 : 12));
 const artSize = computed(() => (props.density === 'compact' ? 38 : 44));
+
+// Show the "not on <your service>" badge only when:
+//   • the row is a real track (no resolving/failed status)
+//   • the track's serviceIds map is populated
+//   • the viewer's preferred service has no id on this track
+const notOnMyService = computed(() => {
+  if (props.track.status) return false;
+  const ids = props.track.serviceIds;
+  if (!ids) return false;
+  const me = auth.preferredService;
+  return ids[me] === null;
+});
 
 function onReact(e: MouseEvent, emoji: string) {
   e.stopPropagation();
@@ -182,6 +196,32 @@ function onClickRow() {
             />
           </span>
         </template>
+      </div>
+
+      <!-- Service-availability badge — neutral, never anxious -->
+      <div
+        v-if="notOnMyService"
+        :style="{
+          marginTop: '6px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '5px',
+          padding: '2px 8px 2px 7px',
+          borderRadius: '999px',
+          background: 'var(--chip)',
+          fontFamily: '&quot;Instrument Serif&quot;, Georgia, serif',
+          fontStyle: 'italic',
+          fontSize: '11.5px',
+          color: 'var(--muted)',
+          lineHeight: 1.3,
+        }"
+      >
+        <ServiceGlyph
+          :service="auth.preferredService"
+          :size="10"
+          color="var(--muted-2)"
+        />
+        not on {{ SERVICES[auth.preferredService].short }}
       </div>
 
       <!-- Failed: tap-to-dismiss hint -->
