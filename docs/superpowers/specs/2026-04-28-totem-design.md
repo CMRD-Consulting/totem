@@ -4,6 +4,45 @@
 **Status:** Approved (brainstorm) → ready for implementation planning
 **Project:** `~/www/cmrd/apps/totem`
 
+## Table of Contents
+
+- [What is Totem?](#what-is-totem)
+- [Product decisions (settled in brainstorm)](#product-decisions-settled-in-brainstorm)
+- [1. Architecture Overview](#1-architecture-overview)
+  - [Components](#components)
+  - [Why this shape works](#why-this-shape-works)
+- [2. Data Model](#2-data-model)
+  - [Tables](#tables)
+  - [Key design choices](#key-design-choices)
+  - [RLS philosophy](#rls-philosophy)
+  - [Deliberately not in v1](#deliberately-not-in-v1)
+- [3. Key Flows](#3-key-flows)
+  - [Flow A — Sign-in](#flow-a--sign-in)
+  - [Flow B — Create playlist + share invite](#flow-b--create-playlist--share-invite)
+  - [Flow C — Join via invite](#flow-c--join-via-invite)
+  - [Flow D — Share-sheet ingestion (the interesting one)](#flow-d--share-sheet-ingestion-the-interesting-one)
+  - [Flow E — Connect service for mirroring (OAuth)](#flow-e--connect-service-for-mirroring-oauth)
+  - [Flow F — Mirror sync](#flow-f--mirror-sync)
+  - [Flow G — Push notifications](#flow-g--push-notifications)
+- [4. Error Handling & Edge Cases](#4-error-handling--edge-cases)
+  - [External API failures](#external-api-failures)
+  - [Auth / token failures](#auth--token-failures)
+  - [Concurrency](#concurrency)
+  - [Track not available on a mirror's service](#track-not-available-on-a-mirrors-service)
+  - [Client-side / iOS](#client-side--ios)
+  - [User lifecycle](#user-lifecycle)
+- [5. Testing Strategy](#5-testing-strategy)
+  - [Layer 1 — RLS policies (security-critical, fully automated)](#layer-1--rls-policies-security-critical-fully-automated)
+  - [Layer 2 — Edge Functions (Deno test, mocked externals)](#layer-2--edge-functions-deno-test-mocked-externals)
+  - [Layer 3 — Service contract tests (separate CI lane, runs nightly)](#layer-3--service-contract-tests-separate-ci-lane-runs-nightly)
+  - [Layer 4 — Client unit tests (Vitest)](#layer-4--client-unit-tests-vitest)
+  - [Layer 5 — End-to-end (Playwright on PWA build)](#layer-5--end-to-end-playwright-on-pwa-build)
+  - [Layer 6 — iOS-only manual gates](#layer-6--ios-only-manual-gates)
+  - [TDD posture](#tdd-posture)
+  - [Deliberately not tested](#deliberately-not-tested)
+- [6. Phased Rollout](#6-phased-rollout)
+- [7. Open Questions (parking lot)](#7-open-questions-parking-lot)
+
 ## What is Totem?
 
 Totem is an iOS app that lets a small group of friends co-curate music playlists together, even when each friend uses a different music service (Spotify, Apple Music, YouTube Music). Friends share a single private playlist via an invite link; anyone in the playlist can add tracks by sharing them from their native music app via the iOS share sheet. Optionally, each user can mirror the shared playlist into their own service so it shows up natively in Spotify / Apple Music / YouTube Music and plays as a continuous playlist there.

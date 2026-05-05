@@ -4,6 +4,19 @@
 
 ---
 
+## Table of Contents
+
+- [1. The product in one paragraph](#1-the-product-in-one-paragraph)
+- [2. Who uses it and what they feel](#2-who-uses-it-and-what-they-feel)
+- [3. Brand attributes](#3-brand-attributes)
+- [4. Concrete screens to design](#4-concrete-screens-to-design)
+- [5. UI problems specific to Totem (do not skip these)](#5-ui-problems-specific-to-totem-do-not-skip-these)
+- [6. Visual direction](#6-visual-direction)
+- [7. References to lean toward and away from](#7-references-to-lean-toward-and-away-from)
+- [8. Specific anti-patterns to avoid](#8-specific-anti-patterns-to-avoid)
+- [9. Deliverables expected](#9-deliverables-expected)
+- [10. Out of scope for this design pass](#10-out-of-scope-for-this-design-pass)
+
 ## 1. The product in one paragraph
 
 **Totem** is an iOS app that lets a small group of close friends co-curate a shared music playlist together — even when each friend uses a different streaming service (Spotify, Apple Music, YouTube Music). One person creates a playlist, shares an invite link, and from then on anyone in the group can add tracks by hitting the iOS share sheet from inside their own music app. Totem is **not a player** — tapping a track deep-links out to the friend's preferred service. Optionally each friend can mirror the shared list into their own service so it appears natively in Spotify / Apple Music / YouTube Music. Think *shared Google Doc, but for songs, across walled gardens.*

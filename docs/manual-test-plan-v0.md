@@ -3,6 +3,15 @@
 Run before each TestFlight build. Two real iOS devices required (Alice + Bob),
 both with Spotify Premium accounts, both signed in to different Apple IDs.
 
+## Table of Contents
+
+- [A. Auth](#a-auth)
+- [B. Create + Invite](#b-create--invite)
+- [C. Join](#c-join)
+- [D. Paste-link Ingest](#d-paste-link-ingest)
+- [E. Spotify Mirror](#e-spotify-mirror)
+- [F. Edge Cases](#f-edge-cases)
+
 ## A. Auth
 
 1. [ ] Alice taps "Sign in with Apple" on a fresh install → consent screen

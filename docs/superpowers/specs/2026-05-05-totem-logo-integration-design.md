@@ -1,5 +1,19 @@
 # Totem logo integration — design spec
 
+## Table of Contents
+
+- [Goal](#goal)
+- [Source asset](#source-asset)
+- [Output artifacts](#output-artifacts)
+- [Square-padding strategy](#square-padding-strategy)
+- [Generation script](#generation-script)
+- [Favicon SVG with dark-mode awareness](#favicon-svg-with-dark-mode-awareness)
+- [Web manifest (`public/site.webmanifest`)](#web-manifest-publicsitewebmanifest)
+- [`index.html` updates](#indexhtml-updates)
+- [In-app integration](#in-app-integration)
+- [Acceptance criteria](#acceptance-criteria)
+- [Out of scope](#out-of-scope)
+
 ## Goal
 
 Integrate the user-provided Totem mark (`/Users/cmitchell/Downloads/totem-mark.svg`) across the iOS app and the web shell. Produce all required icon and splash assets, wire the SVG into in-app surfaces, and update HTML/manifest references.
