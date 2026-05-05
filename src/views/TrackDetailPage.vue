@@ -162,7 +162,8 @@ const services: ServiceKey[] = ['spotify', 'apple', 'youtube'];
                 :style="{
                   fontFamily: 'Inter',
                   fontSize: '11px',
-                  color: 'rgba(255,255,255,0.78)',
+                  color: 'var(--surface)',
+                  opacity: 0.7,
                   marginTop: '1px',
                   fontWeight: 500,
                 }"
@@ -171,7 +172,7 @@ const services: ServiceKey[] = ['spotify', 'apple', 'youtube'];
             <Icon
               name="arrow-out"
               :size="16"
-              :color="track.service === s ? 'rgba(255,255,255,0.7)' : 'var(--muted)'"
+              :color="track.service === s ? 'var(--surface)' : 'var(--muted)'"
             />
           </button>
         </div>
