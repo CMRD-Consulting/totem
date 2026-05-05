@@ -46,6 +46,7 @@ render_icon() {
     -background "${MIDNIGHT}" \
     -gravity center \
     -extent "${size}x${size}" \
+    -define png:exclude-chunks=date,time \
     "${out}"
 }
 
@@ -60,6 +61,7 @@ render_transparent_ink() {
     -background none \
     -gravity center \
     -extent "${h}x${h}" \
+    -define png:exclude-chunks=date,time \
     "${out}"
 }
 
