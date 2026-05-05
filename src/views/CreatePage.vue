@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { IonPage } from '@ionic/vue';
+import { IonPage, onIonViewDidEnter } from '@ionic/vue';
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import IconButton from '@/components/IconButton.vue';
@@ -14,10 +14,18 @@ import type { ServiceKey } from '@/types';
 
 const router = useRouter();
 const playlists = usePlaylistsStore();
-const name = ref('sunday roast');
+const name = ref('');
+const nameInput = ref<HTMLInputElement | null>(null);
 const hues: [number, number, number] = [16, 200, 60];
 const busy = ref(false);
 const error = ref<string | null>(null);
+
+// Focus the name input as soon as Ionic finishes the route transition.
+// onIonViewDidEnter fires after the page is in the DOM and visible — before
+// it would race the transition animation and steal focus mid-slide.
+onIonViewDidEnter(() => {
+  nameInput.value?.focus();
+});
 
 const disabled = computed(() => !name.value.trim() || busy.value);
 const buttonStyle = computed(() => ({
@@ -101,8 +109,13 @@ async function onCreate() {
 
         <div style="padding: 22px 22px 0">
           <input
+            ref="nameInput"
             v-model="name"
             placeholder="e.g. kitchen residency"
+            autocapitalize="off"
+            autocomplete="off"
+            spellcheck="false"
+            @keyup.enter="onCreate"
             :style="{
               all: 'unset',
               boxSizing: 'border-box',
