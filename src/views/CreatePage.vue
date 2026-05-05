@@ -56,6 +56,41 @@ async function onCreate() {
     busy.value = false;
   }
 }
+
+// Invite-token entry — accepts a full URL or a bare token.
+const showJoinInput = ref(false);
+const joinValue = ref('');
+
+function extractToken(input: string): string {
+  const trimmed = input.trim();
+  // Try as URL: pull the segment after /i/ if present.
+  try {
+    const u = new URL(trimmed);
+    const m = u.pathname.match(/\/i\/([^/?#]+)/);
+    if (m) return m[1];
+  } catch {
+    // Not a URL — fall through and treat as bare token.
+  }
+  return trimmed;
+}
+
+const joinReady = computed(() => extractToken(joinValue.value).length > 0 && !busy.value);
+
+async function onJoin() {
+  if (!joinReady.value) return;
+  busy.value = true;
+  error.value = null;
+  try {
+    const token = extractToken(joinValue.value);
+    const result = await playlists.joinByToken(token);
+    if (result?.playlist_id) router.push(`/p/${result.playlist_id}`);
+    else router.push('/');
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    busy.value = false;
+  }
+}
 </script>
 
 <template>
@@ -205,6 +240,7 @@ async function onCreate() {
             }"
           >{{ error }}</div>
           <div
+            v-if="!showJoinInput"
             :style="{
               textAlign: 'center',
               marginTop: '14px',
@@ -214,7 +250,75 @@ async function onCreate() {
             }"
           >
             already invited?
-            <span style="color: var(--accent); font-weight: 600">paste an invite link</span>
+            <button
+              @click="showJoinInput = true"
+              style="
+                all: unset;
+                cursor: pointer;
+                color: var(--accent);
+                font-weight: 600;
+              "
+            >paste an invite link</button>
+          </div>
+          <div v-else style="margin-top: 18px">
+            <input
+              v-model="joinValue"
+              type="url"
+              inputmode="url"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              placeholder="https://totem.cmrd.dev/i/…"
+              :disabled="busy"
+              @keyup.enter="onJoin"
+              :style="{
+                all: 'unset',
+                boxSizing: 'border-box',
+                width: '100%',
+                padding: '14px 16px',
+                borderRadius: '14px',
+                background: 'var(--surface)',
+                border: '0.5px solid var(--divider)',
+                fontFamily: '&quot;JetBrains Mono&quot;, ui-monospace, monospace',
+                fontSize: '13px',
+                color: 'var(--ink)',
+              }"
+            />
+            <button
+              @click="onJoin"
+              :disabled="!joinReady"
+              :style="{
+                all: 'unset',
+                cursor: !joinReady ? 'not-allowed' : 'pointer',
+                boxSizing: 'border-box',
+                width: '100%',
+                height: '44px',
+                borderRadius: '14px',
+                background: joinReady ? 'var(--accent)' : 'var(--chip-strong)',
+                color: joinReady ? '#fff' : 'var(--muted-2)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontFamily: 'Inter',
+                fontWeight: 600,
+                fontSize: '14px',
+                marginTop: '10px',
+              }"
+            >{{ busy ? 'joining…' : 'join playlist' }}</button>
+            <button
+              @click="showJoinInput = false; joinValue = ''"
+              style="
+                all: unset;
+                cursor: pointer;
+                display: block;
+                width: 100%;
+                text-align: center;
+                margin-top: 12px;
+                font-family: Inter;
+                font-size: 12px;
+                color: var(--muted);
+              "
+            >back to create</button>
           </div>
         </div>
       </ScreenScroll>
