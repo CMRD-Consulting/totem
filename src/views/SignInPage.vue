@@ -119,7 +119,7 @@ function resetEmail() {
       "
     >
       <div style="text-align: center; max-width: 320px">
-        <LogoMark :size="80" :style="{ marginBottom: '12px' }" />
+        <LogoMark :size="80" />
         <Wordmark :size="64" />
         <div
           :style="{
