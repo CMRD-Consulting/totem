@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { IonActionSheet, IonModal, IonPage, onIonViewWillEnter } from '@ionic/vue';
+import {
+  IonActionSheet,
+  IonContent,
+  IonModal,
+  IonPage,
+  IonRefresher,
+  IonRefresherContent,
+  onIonViewWillEnter,
+} from '@ionic/vue';
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import ActivityRow from '@/components/ActivityRow.vue';
@@ -8,7 +16,6 @@ import AvatarStack from '@/components/AvatarStack.vue';
 import Icon from '@/components/Icon.vue';
 import IconButton from '@/components/IconButton.vue';
 import PasteLinkSheet from '@/components/PasteLinkSheet.vue';
-import ScreenScroll from '@/components/ScreenScroll.vue';
 import ServiceGlyph from '@/components/ServiceGlyph.vue';
 import Sigil from '@/components/Sigil.vue';
 import TopBar from '@/components/TopBar.vue';
@@ -111,6 +118,19 @@ function onSent() {
   if (playlistId.value) playlists.loadTracks(playlistId.value).catch(() => {});
 }
 
+async function onRefresh(event: CustomEvent) {
+  try {
+    if (playlistId.value) {
+      await Promise.all([
+        playlists.loadTracks(playlistId.value),
+        loadMyMirrors(),
+      ]);
+    }
+  } finally {
+    (event.target as HTMLIonRefresherElement).complete();
+  }
+}
+
 const pasteLinkSheetRef = ref<{ focus: () => void } | null>(null);
 
 function onShareSheetPresented() {
@@ -191,7 +211,20 @@ async function onActionPicked(ev: CustomEvent) {
         </template>
       </TopBar>
 
-      <ScreenScroll :pad-bottom="120">
+      <ion-content
+        class="totem-content"
+        :scroll-y="true"
+        :style="{
+          '--background': 'var(--bg)',
+          '--padding-bottom': '120px',
+        }"
+      >
+        <ion-refresher slot="fixed" @ion-refresh="onRefresh">
+          <ion-refresher-content
+            pulling-icon="dots"
+            refreshing-spinner="crescent"
+          />
+        </ion-refresher>
         <!-- Hero -->
         <div style="padding: 4px 22px 18px">
           <div style="display: flex; align-items: flex-end; gap: 14px">
@@ -467,7 +500,7 @@ async function onActionPicked(ev: CustomEvent) {
             <Icon name="more" :size="16" color="var(--muted-2)" />
           </div>
         </div>
-      </ScreenScroll>
+      </ion-content>
     </div>
 
     <!-- Paste-link sheet — sits over the playlist instead of replacing it. -->

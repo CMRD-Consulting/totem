@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { IonPage } from '@ionic/vue';
-import { onIonViewWillEnter } from '@ionic/vue';
+import {
+  IonContent,
+  IonPage,
+  IonRefresher,
+  IonRefresherContent,
+  onIonViewWillEnter,
+} from '@ionic/vue';
 import { useRouter } from 'vue-router';
 import ActivityRow from '@/components/ActivityRow.vue';
 import AvatarStack from '@/components/AvatarStack.vue';
 import Icon from '@/components/Icon.vue';
 import IconButton from '@/components/IconButton.vue';
 import LogoMark from '@/components/LogoMark.vue';
-import ScreenScroll from '@/components/ScreenScroll.vue';
 import SectionHeader from '@/components/SectionHeader.vue';
 import Sigil from '@/components/Sigil.vue';
 import TopBar from '@/components/TopBar.vue';
@@ -23,6 +27,14 @@ const auth = useAuthStore();
 onIonViewWillEnter(() => {
   playlists.loadList().catch(() => {});
 });
+
+async function onRefresh(event: CustomEvent) {
+  try {
+    await playlists.loadList();
+  } finally {
+    (event.target as HTMLIonRefresherElement).complete();
+  }
+}
 
 async function onSettings() {
   // Stub: settings page TBD. For now, the settings icon signs out.
@@ -56,7 +68,20 @@ async function onSettings() {
         </template>
       </TopBar>
 
-      <ScreenScroll>
+      <ion-content
+        class="totem-content"
+        :scroll-y="true"
+        :style="{
+          '--background': 'var(--bg)',
+          '--padding-bottom': '40px',
+        }"
+      >
+        <ion-refresher slot="fixed" @ion-refresh="onRefresh">
+          <ion-refresher-content
+            pulling-icon="dots"
+            refreshing-spinner="crescent"
+          />
+        </ion-refresher>
         <div :style="{ padding: '8px 22px 22px', display: 'flex', alignItems: 'center', gap: '14px' }">
           <LogoMark :size="80" />
           <div>
@@ -185,7 +210,7 @@ async function onSettings() {
         <div style="padding: 0 22px">
           <ActivityRow v-for="a in ACTIVITY.slice(0, 4)" :key="a.id" :item="a" />
         </div>
-      </ScreenScroll>
+      </ion-content>
     </div>
   </ion-page>
 </template>
