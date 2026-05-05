@@ -58,6 +58,33 @@ async function signInApple() {
   }
 }
 
+async function signInSpotify() {
+  busy.value = true;
+  error.value = null;
+  try {
+    const redirectTo = `${window.location.origin}${
+      (route.query.redirect as string) || '/'
+    }`;
+    const { error: authErr } = await supabase.auth.signInWithOAuth({
+      provider: 'spotify',
+      options: {
+        redirectTo,
+        // Just enough to identify the user. Mirror's broader scopes
+        // (playlist-modify-*, user-read-private) are requested on demand
+        // through the separate oauth-start edge function.
+        scopes: 'user-read-email',
+      },
+    });
+    if (authErr) throw authErr;
+    // Browser navigates away to Spotify; auth state listener will handle the
+    // landing on return.
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function sendCode() {
   if (!emailReady.value || busy.value) return;
   busy.value = true;
@@ -170,6 +197,44 @@ function resetEmail() {
             />
           </svg>
           <span>Sign in with Apple</span>
+        </button>
+
+        <!-- Spotify -->
+        <button
+          @click="signInSpotify"
+          :disabled="busy"
+          :style="{
+            all: 'unset',
+            cursor: busy ? 'wait' : 'pointer',
+            boxSizing: 'border-box',
+            width: '100%',
+            height: '52px',
+            borderRadius: '14px',
+            background: '#1DB954',
+            color: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
+            fontFamily: 'Inter',
+            fontWeight: 600,
+            fontSize: '15px',
+            opacity: busy ? 0.6 : 1,
+            transition: 'opacity 0.18s',
+            marginTop: '10px',
+          }"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" style="display: block">
+            <circle cx="12" cy="12" r="11" fill="#fff" />
+            <path
+              d="M6 9.5c4-1.2 9-1 13 1.2M7 13c3.5-1 7.5-.7 11 1.3M8 16.3c2.8-.8 5.8-.6 8.5.9"
+              stroke="#1DB954"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              fill="none"
+            />
+          </svg>
+          <span>Sign in with Spotify</span>
         </button>
 
         <!-- Divider -->
