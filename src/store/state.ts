@@ -1,4 +1,4 @@
-import { reactive } from 'vue';
+import { reactive, watch } from 'vue';
 import { TRACKS } from '@/data/mock';
 import type { ThemeKey, Track } from '@/types';
 
@@ -10,12 +10,38 @@ interface AppState {
   accent: string;
 }
 
+const THEME_KEY = 'totem-theme';
+const ACCENT_KEY = 'totem-accent';
+
+function loadStoredTheme(): ThemeKey {
+  const stored = typeof window !== 'undefined' ? window.localStorage.getItem(THEME_KEY) : null;
+  if (stored === 'paper' || stored === 'cream' || stored === 'midnight') return stored;
+  return 'midnight';
+}
+
+function loadStoredAccent(): string {
+  const stored = typeof window !== 'undefined' ? window.localStorage.getItem(ACCENT_KEY) : null;
+  return stored ?? '#d62e2e';
+}
+
 export const state = reactive<AppState>({
   tracks: [...TRACKS],
   meId: 'you',
-  theme: 'midnight',
-  accent: '#d62e2e',
+  theme: loadStoredTheme(),
+  accent: loadStoredAccent(),
 });
+
+// Persist theme + accent across reloads. Per-device preference; no DB sync.
+if (typeof window !== 'undefined') {
+  watch(
+    () => state.theme,
+    (v) => window.localStorage.setItem(THEME_KEY, v),
+  );
+  watch(
+    () => state.accent,
+    (v) => window.localStorage.setItem(ACCENT_KEY, v),
+  );
+}
 
 // v0: reactions are an ephemeral client-only concept (no DB schema).
 // This mutates whichever Track instance carries `trackId` in state.tracks.

@@ -16,12 +16,10 @@ import SectionHeader from '@/components/SectionHeader.vue';
 import Sigil from '@/components/Sigil.vue';
 import TopBar from '@/components/TopBar.vue';
 import Wordmark from '@/components/Wordmark.vue';
-import { useAuthStore } from '@/stores/auth';
 import { usePlaylistsStore } from '@/stores/playlists';
 
 const router = useRouter();
 const playlists = usePlaylistsStore();
-const auth = useAuthStore();
 
 onIonViewWillEnter(() => {
   playlists.loadList().catch(() => {});
@@ -39,13 +37,8 @@ async function onRefresh(event: CustomEvent) {
   }
 }
 
-async function onSettings() {
-  // Stub: settings page TBD. For now, the settings icon signs out.
-  if (window.confirm('Sign out?')) {
-    await auth.signOut();
-    playlists.reset();
-    router.replace('/sign-in');
-  }
+function onSettings() {
+  router.push('/settings');
 }
 </script>
 

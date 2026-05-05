@@ -9,6 +9,7 @@ import InvitePage from '@/views/InvitePage.vue';
 import MirrorPage from '@/views/MirrorPage.vue';
 import SignInPage from '@/views/SignInPage.vue';
 import JoinPage from '@/views/JoinPage.vue';
+import SettingsPage from '@/views/SettingsPage.vue';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -36,7 +37,7 @@ const routes: Array<RouteRecordRaw> = [
     redirect: (to) => `/p/${to.params.playlistId}`,
   },
   { path: '/i/:token', name: 'join', component: JoinPage },
-  { path: '/settings', redirect: '/' },
+  { path: '/settings', name: 'settings', component: SettingsPage },
 ];
 
 const router = createRouter({
