@@ -8,7 +8,8 @@
 import { corsResponse, handlePreflight } from "../_shared/cors.ts";
 
 const SPOTIFY_AUTHORIZE = "https://accounts.spotify.com/authorize";
-const SCOPES = "playlist-modify-private playlist-modify-public user-read-private";
+const SCOPES =
+  "playlist-modify-private playlist-modify-public user-read-private user-read-email";
 
 Deno.serve((req) => {
   const preflight = handlePreflight(req);

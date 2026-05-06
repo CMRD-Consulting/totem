@@ -52,7 +52,9 @@ export async function refreshAccessToken(refreshToken: string): Promise<SpotifyT
   return res.json();
 }
 
-export async function getCurrentUser(accessToken: string): Promise<{ id: string; display_name: string }> {
+export async function getCurrentUser(
+  accessToken: string,
+): Promise<{ id: string; display_name: string; email?: string }> {
   const res = await fetch(`${SPOTIFY_API}/me`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
