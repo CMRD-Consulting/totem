@@ -126,16 +126,15 @@ Deno.serve(async (req) => {
     //      the Users-and-Access allowlist. Most likely cause for new apps.
     //   2. The token genuinely lacks playlist-modify scope (caught above).
     if (msg.includes("403")) {
-      const emailLine = spotifyUser.email
-        ? `Email to add: <code>${spotifyUser.email}</code><br>`
-        : "";
       return htmlPage({
         title: "Spotify rejected the request",
         body:
           "Spotify returned 403 Forbidden. The most common cause is " +
           "<b>Development Mode restriction</b> — open developer.spotify.com → " +
-          "your app → Users and Access, and add this Spotify account's email. " +
-          `<br><br><small>${emailLine}Spotify user id: <code>${spotifyUser.id}</code></small>`,
+          "your app → Users and Access, and add this Spotify account's email." +
+          `<br><br><pre style="text-align: left; background: #f4f4f4; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 11px; line-height: 1.4;">${
+            JSON.stringify(spotifyUser, null, 2)
+          }</pre>`,
       });
     }
     return htmlPage({
@@ -167,12 +166,13 @@ Deno.serve(async (req) => {
 
   // v0 limitation: existing playlist tracks are not backfilled into the new
   // Spotify mirror — only future inserts will sync via the trigger.
-  const acctLine = spotifyUser.email
-    ? `<br><small style="color: #999;">Connected as <code>${spotifyUser.email}</code></small>`
-    : "";
   return htmlPage({
     title: "Mirror connected",
-    body: `New tracks added by anyone in <b>${playlistRow.name}</b> will now appear in your Spotify.${acctLine}`,
+    body:
+      `New tracks added by anyone in <b>${playlistRow.name}</b> will now appear in your Spotify.` +
+      `<br><br><pre style="text-align: left; background: #f4f4f4; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 11px; line-height: 1.4;">${
+        JSON.stringify(spotifyUser, null, 2)
+      }</pre>`,
     close: true,
   });
 });
