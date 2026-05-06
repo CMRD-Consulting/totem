@@ -10,6 +10,7 @@ import MirrorPage from '@/views/MirrorPage.vue';
 import SignInPage from '@/views/SignInPage.vue';
 import JoinPage from '@/views/JoinPage.vue';
 import SettingsPage from '@/views/SettingsPage.vue';
+import AddFromSharePage from '@/views/AddFromSharePage.vue';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -38,6 +39,11 @@ const routes: Array<RouteRecordRaw> = [
   },
   { path: '/i/:token', name: 'join', component: JoinPage },
   { path: '/settings', name: 'settings', component: SettingsPage },
+  {
+    path: '/add-from-share',
+    name: 'add-from-share',
+    component: AddFromSharePage,
+  },
 ];
 
 const router = createRouter({

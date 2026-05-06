@@ -46,14 +46,37 @@ router.isReady().then(() => {
   app.mount('#app');
 });
 
-// Deep links: when the app is opened via a Universal Link like
-// https://totem.cmrd.dev/i/abc123, route the path into Vue Router so the
-// JoinPage handles the invite. Native only — the web build already routes
-// these paths normally.
+// Deep links — two flavors:
+//
+//   1. Universal Links (https://totem.cmrd.dev/i/<token>): tapping an invite
+//      from Messages or Mail opens the app at the JoinPage path.
+//
+//   2. Custom-scheme links (dev.cmrd.totem://share?url=…): the iOS Share
+//      Extension hands off shared URLs by calling the host app with this
+//      scheme. We route to /add-from-share?url=… where the picker UI lets
+//      the user choose a playlist + commits the ingest.
+//
+// Native only — browsers handle URL routing themselves.
 if (Capacitor.isNativePlatform()) {
   CapApp.addListener('appUrlOpen', (event) => {
     try {
       const url = new URL(event.url);
+
+      // Custom scheme — share extension handoff.
+      if (url.protocol === 'dev.cmrd.totem:') {
+        if (url.host === 'share') {
+          const incoming = url.searchParams.get('url');
+          if (incoming) {
+            router.push({
+              path: '/add-from-share',
+              query: { url: incoming },
+            });
+          }
+        }
+        return;
+      }
+
+      // Universal Link — known app paths.
       if (url.pathname.startsWith('/i/') || url.pathname.startsWith('/p/')) {
         router.push(url.pathname + url.search);
       }
