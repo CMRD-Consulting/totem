@@ -5,6 +5,9 @@ export interface SpotifyTokens {
   access_token: string;
   refresh_token?: string;
   expires_in: number;
+  /** Space-separated scopes Spotify actually granted (may be a subset of
+   *  what was requested if the user denied some). */
+  scope?: string;
 }
 
 export async function exchangeCode(
