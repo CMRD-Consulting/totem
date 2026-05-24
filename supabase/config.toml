@@ -401,6 +401,9 @@ verify_jwt = false
 [functions.mirror-sync]
 verify_jwt = false
 
+[functions.backfill-mirror-target]
+verify_jwt = false
+
 [functions.send-push]
 verify_jwt = false
 

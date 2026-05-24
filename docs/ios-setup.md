@@ -38,14 +38,21 @@ supabase secrets set \
   APNS_USE_SANDBOX=1   # 1 for development builds, omit for production
 ```
 
-### 1d. Tell the trigger where to POST
+### 1d. Tell the triggers where to POST
 
-Run once in the Supabase SQL editor:
+Run once in the Supabase SQL editor. Two GUCs need to point at their
+respective functions (this is what lets the pg_net webhooks fire):
 
 ```sql
 alter database postgres
   set app.send_push_url to
     'https://<your-project-ref>.supabase.co/functions/v1/send-push';
+
+-- Closes v0 limitation #4: mirroring a populated playlist now backfills
+-- the existing tracks instead of only syncing future inserts.
+alter database postgres
+  set app.backfill_mirror_target_url to
+    'https://<your-project-ref>.supabase.co/functions/v1/backfill-mirror-target';
 ```
 
 (`app.service_role_key` and `app.mirror_sync_url` should already be set
@@ -65,7 +72,7 @@ Push Notifications.
 ### 1f. Deploy + test
 
 ```bash
-supabase functions deploy send-push
+supabase functions deploy send-push backfill-mirror-target
 supabase db push
 pnpm exec cap sync ios
 pnpm exec cap open ios

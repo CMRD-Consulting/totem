@@ -97,6 +97,37 @@ export async function addTrackToPlaylist(
   if (!res.ok) throw new Error(`Spotify add track ${res.status}: ${await res.text()}`);
 }
 
+// Batched variant of addTrackToPlaylist used by the backfill function. Spotify
+// accepts up to 100 URIs per call; we chunk to stay under that limit. Returns
+// the count actually pushed (0 if the input was empty after dedup).
+export async function addTracksToPlaylist(
+  accessToken: string,
+  spotifyPlaylistId: string,
+  spotifyTrackIds: string[],
+): Promise<number> {
+  if (spotifyTrackIds.length === 0) return 0;
+  // Dedupe — repeated URIs would create duplicate playlist entries on Spotify.
+  const unique = Array.from(new Set(spotifyTrackIds));
+  let pushed = 0;
+  for (let i = 0; i < unique.length; i += 100) {
+    const chunk = unique.slice(i, i + 100);
+    const uris = chunk.map((id) => `spotify:track:${id}`);
+    const res = await fetch(`${SPOTIFY_API}/playlists/${spotifyPlaylistId}/tracks`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ uris }),
+    });
+    if (!res.ok) {
+      throw new Error(`Spotify add tracks ${res.status}: ${await res.text()}`);
+    }
+    pushed += chunk.length;
+  }
+  return pushed;
+}
+
 export async function removeTrackFromPlaylist(
   accessToken: string,
   spotifyPlaylistId: string,
