@@ -17,6 +17,7 @@ withDefaults(
     :width="size"
     :height="size"
     viewBox="0 0 24 24"
+    aria-hidden="true"
     style="display: block"
   >
     <circle cx="12" cy="12" r="11" :fill="color" />
@@ -33,6 +34,7 @@ withDefaults(
     :width="size"
     :height="size"
     viewBox="0 0 814 1000"
+    aria-hidden="true"
     style="display: block"
   >
     <path
@@ -45,6 +47,7 @@ withDefaults(
     :width="size"
     :height="size"
     viewBox="0 0 24 24"
+    aria-hidden="true"
     style="display: block"
   >
     <circle cx="12" cy="12" r="11" :fill="color" />

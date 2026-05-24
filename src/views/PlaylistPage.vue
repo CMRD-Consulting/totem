@@ -6,11 +6,13 @@ import {
   IonPage,
   IonRefresher,
   IonRefresherContent,
+  alertController,
+  onIonViewDidEnter,
   onIonViewWillEnter,
+  useIonRouter,
 } from '@ionic/vue';
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import ActivityRow from '@/components/ActivityRow.vue';
 import Avatar from '@/components/Avatar.vue';
 import AvatarStack from '@/components/AvatarStack.vue';
 import Icon from '@/components/Icon.vue';
@@ -20,8 +22,12 @@ import ServiceGlyph from '@/components/ServiceGlyph.vue';
 import Sigil from '@/components/Sigil.vue';
 import TopBar from '@/components/TopBar.vue';
 import TrackRow from '@/components/TrackRow.vue';
+import InvitePage from '@/views/InvitePage.vue';
+import MirrorPage from '@/views/MirrorPage.vue';
+import TrackDetailPage from '@/views/TrackDetailPage.vue';
+import { peekMusicClipboard, shortUrl } from '@/lib/musicUrl';
 import { pillBtn } from '@/components/pillBtn';
-import { ACTIVITY, SERVICES } from '@/data/mock';
+import { SERVICES } from '@/data/mock';
 import { supabase } from '@/lib/supabase';
 import { useRealtimePlaylist } from '@/composables/useRealtimePlaylist';
 import { useAuthStore } from '@/stores/auth';
@@ -37,13 +43,80 @@ interface MyMirror {
 }
 
 const router = useRouter();
+const ionRouter = useIonRouter();
 const route = useRoute();
 const playlists = usePlaylistsStore();
 const auth = useAuthStore();
-const tab = ref<'songs' | 'activity' | 'members'>('songs');
+
+function goBack() {
+  // 'back' direction tells IonRouterOutlet to animate the right-slide-out
+  // pop, revealing Hub underneath — instead of treating Hub as a forward
+  // push (which would be the default if we just called router.push('/')).
+  if (ionRouter.canGoBack()) {
+    ionRouter.back();
+  } else {
+    ionRouter.navigate('/', 'back', 'pop');
+  }
+}
+const tab = ref<'songs' | 'members'>('songs');
 const shareSheetOpen = ref(false);
 const actionSheetOpen = ref(false);
+const inviteOpen = ref(false);
+const mirrorOpen = ref(false);
+const trackOpenId = ref<string | null>(null);
 const myMirrors = ref<MyMirror[]>([]);
+
+// Used by card modals hosted on this page (Invite, eventually Mirror + Track)
+// to give the iOS card-stack recession its target. Pointing at the router
+// outlet means the whole app surface participates, not just this one page.
+const presentingElement = ref<HTMLElement | null>(null);
+
+// Inline empty-state add-track UI. Mirrors the input + clipboard chip pattern
+// PasteLinkSheet uses, but lives directly in the empty playlist instead of
+// requiring the "add a song" tap. Hidden whenever tracks.length > 0.
+const emptyUrl = ref('');
+const emptyClipboard = ref<string | null>(null);
+const emptyUrlInput = ref<HTMLInputElement | null>(null);
+const emptyIsLikelyUrl = computed(() =>
+  /^https?:\/\//i.test(emptyUrl.value.trim()),
+);
+// Hide the chip the moment the user types — they're entering their own URL,
+// the clipboard suggestion is no longer relevant.
+watch(emptyUrl, (v) => {
+  if (v) emptyClipboard.value = null;
+});
+
+function submitEmptyUrl() {
+  if (!emptyIsLikelyUrl.value || !playlistId.value) return;
+  // Fire-and-forget: ingestUrl pushes a 'resolving' pending row, so the
+  // empty state vanishes immediately and the user sees the optimistic entry.
+  // Failures surface as a 'failed' track row inside the list, not here.
+  playlists.ingestUrl(playlistId.value, emptyUrl.value.trim());
+  emptyUrl.value = '';
+  emptyClipboard.value = null;
+}
+
+function pasteAndAddEmpty() {
+  if (!emptyClipboard.value) return;
+  emptyUrl.value = emptyClipboard.value;
+  submitEmptyUrl();
+}
+
+onMounted(async () => {
+  presentingElement.value = document.querySelector('ion-router-outlet');
+  // Best-effort clipboard peek. Denied permissions resolve to null silently.
+  emptyClipboard.value = await peekMusicClipboard();
+});
+
+// Autofocus the empty-state URL input once Ionic finishes the route
+// transition. Firing earlier (in onIonViewWillEnter or onMounted) races the
+// slide animation and iOS may swallow the keyboard request. The guard
+// avoids a stray focus call when the playlist already has tracks.
+onIonViewDidEnter(() => {
+  if (tab.value === 'songs' && tracks.value.length === 0) {
+    emptyUrlInput.value?.focus();
+  }
+});
 
 const playlistId = computed(() => route.params.playlistId as string);
 const playlist = computed(
@@ -166,30 +239,73 @@ const actionButtons = computed(() => {
   return buttons;
 });
 
+/**
+ * Themed Yes/Cancel confirmation. Replaces window.confirm so the prompt
+ * matches Ionic's modal language (and so a native iOS app doesn't show a
+ * browser-chrome dialog over the Capacitor view).
+ */
+async function confirmDestructive(
+  header: string,
+  message: string,
+  destructiveLabel: string,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    alertController
+      .create({
+        header,
+        message,
+        buttons: [
+          { text: 'Cancel', role: 'cancel', handler: () => resolve(false) },
+          { text: destructiveLabel, role: 'destructive', handler: () => resolve(true) },
+        ],
+      })
+      .then((alert) => {
+        alert.onDidDismiss().then(() => resolve(false));
+        alert.present();
+      });
+  });
+}
+
 async function onActionPicked(ev: CustomEvent) {
   const data = (ev.detail.data as string) ?? 'cancel';
   if (!playlist.value || data === 'cancel') return;
   try {
     if (data === 'rotate') {
       const newToken = await playlists.rotateInvite(playlist.value.id);
-      window.alert(`New invite link generated. Code: TOTEM-${newToken.slice(0, 6).toUpperCase()}`);
+      await alertController
+        .create({
+          header: 'New invite link',
+          message: `Code: TOTEM-${newToken.slice(0, 6).toUpperCase()}`,
+          buttons: ['OK'],
+        })
+        .then((a) => a.present());
     } else if (data === 'leave') {
-      if (!window.confirm(`Leave "${playlist.value.name}"?`)) return;
+      const ok = await confirmDestructive(
+        `Leave "${playlist.value.name}"?`,
+        'You can rejoin anytime with the invite link.',
+        'Leave',
+      );
+      if (!ok) return;
       await playlists.leave(playlist.value.id);
       router.replace('/');
     } else if (data === 'delete') {
-      if (
-        !window.confirm(
-          `Delete "${playlist.value.name}"? This removes the playlist for everyone.`,
-        )
-      ) {
-        return;
-      }
+      const ok = await confirmDestructive(
+        `Delete "${playlist.value.name}"?`,
+        'This removes the playlist for everyone. Cannot be undone.',
+        'Delete',
+      );
+      if (!ok) return;
       await playlists.deletePlaylist(playlist.value.id);
       router.replace('/');
     }
   } catch (e) {
-    window.alert((e as Error).message);
+    await alertController
+      .create({
+        header: 'Something went wrong',
+        message: (e as Error).message,
+        buttons: ['OK'],
+      })
+      .then((a) => a.present());
   }
 }
 </script>
@@ -208,10 +324,10 @@ async function onActionPicked(ev: CustomEvent) {
     >
       <TopBar>
         <template #left>
-          <IconButton name="back" @click="router.push('/')" />
+          <IconButton name="back" label="Back to your playlists" @click="goBack" />
         </template>
         <template #right>
-          <IconButton name="more" @click="actionSheetOpen = true" />
+          <IconButton name="more" label="Playlist actions" @click="actionSheetOpen = true" />
         </template>
       </TopBar>
 
@@ -229,6 +345,10 @@ async function onActionPicked(ev: CustomEvent) {
             refreshing-spinner="crescent"
           />
         </ion-refresher>
+        <!-- Cold page loads (refresh) mount this view before the playlists
+             store has populated, so `playlist` is undefined for one tick.
+             Gate the content so the template never dereferences undefined. -->
+        <template v-if="playlist">
         <!-- Hero -->
         <div style="padding: 4px 22px 18px">
           <div style="display: flex; align-items: flex-end; gap: 14px">
@@ -287,34 +407,49 @@ async function onActionPicked(ev: CustomEvent) {
             </span>
           </div>
 
-          <!-- Action bar -->
+          <!-- Action bar — "add a song" is hidden when the playlist is empty
+               because the songs tab's inline empty state already surfaces a
+               URL input + paste-and-add chip. Two competing CTAs for the
+               same action confused the empty case. -->
           <div style="display: flex; gap: 8px; margin-top: 16px">
-            <button :style="pillBtn(true)" @click="shareSheetOpen = true">
+            <button
+              v-if="tracks.length > 0"
+              :style="pillBtn(true)"
+              @click="shareSheetOpen = true"
+            >
               <Icon name="plus" :size="15" />
               <span>add a song</span>
             </button>
-            <button :style="pillBtn(false)" @click="router.push(`/p/${playlist.id}/invite`)">
+            <button :style="pillBtn(false)" @click="inviteOpen = true">
               <Icon name="share" :size="15" />
             </button>
-            <button :style="pillBtn(false)" @click="router.push(`/p/${playlist.id}/mirror`)">
+            <button :style="pillBtn(false)" @click="mirrorOpen = true">
               <Icon name="link" :size="15" />
             </button>
           </div>
 
-          <!-- Mirror status — live from mirror_targets, scoped to me by RLS -->
-          <div
+          <!-- Mirror status — live from mirror_targets, scoped to me by RLS.
+               Rendered as a <button> so screen readers announce it as
+               actionable, and the chevron is always present so the "tap to
+               manage" affordance is consistent. -->
+          <button
             v-if="primaryMirror"
-            @click="router.push(`/p/${playlist.id}/mirror`)"
-            style="
-              margin-top: 14px;
-              padding: 10px 12px;
-              background: var(--chip);
-              border-radius: 10px;
-              display: flex;
-              align-items: center;
-              gap: 10px;
-              cursor: pointer;
-            "
+            type="button"
+            aria-label="Manage mirror settings"
+            @click="mirrorOpen = true"
+            :style="{
+              all: 'unset',
+              cursor: 'pointer',
+              boxSizing: 'border-box',
+              width: '100%',
+              marginTop: '14px',
+              padding: '10px 12px',
+              background: 'var(--chip)',
+              borderRadius: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+            }"
           >
             <ServiceGlyph
               :service="primaryMirror.service"
@@ -324,6 +459,7 @@ async function onActionPicked(ev: CustomEvent) {
             <div
               :style="{
                 flex: 1,
+                textAlign: 'left',
                 fontFamily: 'Inter',
                 fontSize: '12px',
                 color: 'var(--ink)',
@@ -348,39 +484,48 @@ async function onActionPicked(ev: CustomEvent) {
                 </span>
               </template>
             </div>
+            <!-- Status indicator (synced check / error) is now a separate
+                 inline element from the always-present chevron — keeps the
+                 "tap to manage" affordance consistent regardless of state. -->
             <Icon
               v-if="primaryMirror.enabled && !primaryMirror.last_sync_error"
               name="check"
               :size="14"
               color="var(--accent)"
             />
-            <Icon v-else name="chevron" :size="14" color="var(--muted-2)" />
-          </div>
-          <div
+            <Icon name="chevron" :size="14" color="var(--muted-2)" />
+          </button>
+          <button
             v-else
-            @click="router.push(`/p/${playlist.id}/mirror`)"
-            style="
-              margin-top: 14px;
-              padding: 10px 12px;
-              background: var(--chip);
-              border-radius: 10px;
-              display: flex;
-              align-items: center;
-              gap: 10px;
-              cursor: pointer;
-            "
+            type="button"
+            aria-label="Set up a mirror for this playlist"
+            @click="mirrorOpen = true"
+            :style="{
+              all: 'unset',
+              cursor: 'pointer',
+              boxSizing: 'border-box',
+              width: '100%',
+              marginTop: '14px',
+              padding: '10px 12px',
+              background: 'var(--chip)',
+              borderRadius: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+            }"
           >
             <Icon name="link" :size="16" color="var(--muted)" />
             <div
               :style="{
                 flex: 1,
+                textAlign: 'left',
                 fontFamily: 'Inter',
                 fontSize: '12px',
                 color: 'var(--muted)',
               }"
             >mirror this playlist into your own service</div>
             <Icon name="chevron" :size="14" color="var(--muted-2)" />
-          </div>
+          </button>
         </div>
 
         <!-- Tabs -->
@@ -395,15 +540,16 @@ async function onActionPicked(ev: CustomEvent) {
           <button
             v-for="t in [
               { k: 'songs', label: 'songs', n: playlist.tracks },
-              { k: 'activity', label: 'activity', n: null },
               { k: 'members', label: 'friends', n: playlist.members.length },
             ]"
             :key="t.k"
-            @click="tab = (t.k as 'songs' | 'activity' | 'members')"
+            type="button"
+            :aria-pressed="tab === t.k"
+            @click="tab = (t.k as 'songs' | 'members')"
             :style="{
               all: 'unset',
               cursor: 'pointer',
-              padding: '10px 12px',
+              padding: '14px 12px',
               fontFamily: 'Inter',
               fontSize: '13px',
               fontWeight: 600,
@@ -435,30 +581,125 @@ async function onActionPicked(ev: CustomEvent) {
             v-for="t in tracks"
             :key="t.id"
             :track="t"
-            @tap="router.push(`/p/${playlist.id}/t/${t.id}`)"
+            @tap="trackOpenId = t.id"
             @dismiss="playlists.dismissPending(playlist.id, t.id)"
           />
           <div
             v-if="tracks.length === 0"
-            :style="{
-              padding: '30px 22px',
-              textAlign: 'center',
-              fontFamily: '&quot;Instrument Serif&quot;, Georgia, serif',
-              fontStyle: 'italic',
-              fontSize: '17px',
-              color: 'var(--muted)',
-              lineHeight: 1.4,
-            }"
+            :style="{ padding: '30px 22px 0', maxWidth: '420px', margin: '0 auto' }"
           >
-            no songs yet — <br />
-            paste a link to start the mixtape.
+            <div
+              :style="{
+                textAlign: 'center',
+                fontFamily: '&quot;Instrument Serif&quot;, Georgia, serif',
+                fontStyle: 'italic',
+                fontSize: '17px',
+                color: 'var(--muted)',
+                lineHeight: 1.4,
+                marginBottom: '20px',
+              }"
+            >
+              no songs yet — <br />
+              paste a link to start the mixtape.
+            </div>
+
+            <input
+              ref="emptyUrlInput"
+              v-model="emptyUrl"
+              type="url"
+              inputmode="url"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              placeholder="https://open.spotify.com/track/…"
+              @keyup.enter="submitEmptyUrl"
+              :style="{
+                all: 'unset',
+                boxSizing: 'border-box',
+                width: '100%',
+                padding: '14px 16px',
+                borderRadius: '14px',
+                background: 'var(--surface)',
+                border: '0.5px solid var(--divider)',
+                fontFamily: '&quot;JetBrains Mono&quot;, ui-monospace, monospace',
+                fontSize: '13px',
+                color: 'var(--ink)',
+              }"
+            />
+
+            <!-- Clipboard chip — shown only when the input is empty AND the
+                 clipboard contains a music URL. Tapping it fills + sends. -->
+            <button
+              v-if="!emptyUrl && emptyClipboard"
+              @click="pasteAndAddEmpty"
+              :style="{
+                all: 'unset',
+                cursor: 'pointer',
+                boxSizing: 'border-box',
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: '12px',
+                background: 'var(--accent-soft)',
+                border: '1px solid var(--accent)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                marginTop: '10px',
+              }"
+            >
+              <Icon name="copy" :size="14" color="var(--accent)" />
+              <div style="flex: 1; min-width: 0; text-align: left">
+                <div
+                  :style="{
+                    fontFamily: 'Inter',
+                    fontWeight: 600,
+                    fontSize: '12.5px',
+                    color: 'var(--accent)',
+                  }"
+                >paste &amp; add</div>
+                <div
+                  :style="{
+                    fontFamily: '&quot;JetBrains Mono&quot;, ui-monospace, monospace',
+                    fontSize: '11px',
+                    color: 'var(--muted)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    marginTop: '1px',
+                  }"
+                >{{ shortUrl(emptyClipboard) }}</div>
+              </div>
+              <Icon name="arrow-out" :size="14" color="var(--accent)" />
+            </button>
+
+            <!-- Submit — always visible so the goal of the empty state is
+                 obvious. Disabled state communicated via opacity (not just
+                 color shift) so colorblind users get a non-color signal. -->
+            <button
+              :disabled="!emptyIsLikelyUrl"
+              @click="submitEmptyUrl"
+              :style="{
+                all: 'unset',
+                cursor: emptyIsLikelyUrl ? 'pointer' : 'not-allowed',
+                opacity: emptyIsLikelyUrl ? 1 : 0.5,
+                boxSizing: 'border-box',
+                width: '100%',
+                height: '46px',
+                borderRadius: '14px',
+                background: 'var(--accent)',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontFamily: 'Inter',
+                fontWeight: 700,
+                fontSize: '14px',
+                marginTop: '10px',
+                transition: 'opacity 0.2s',
+              }"
+            >add to playlist</button>
           </div>
         </template>
-
-        <!-- Activity -->
-        <div v-else-if="tab === 'activity'" style="padding: 12px 22px">
-          <ActivityRow v-for="a in ACTIVITY" :key="a.id" :item="a" />
-        </div>
 
         <!-- Members -->
         <div v-else style="padding: 8px 14px">
@@ -504,15 +745,16 @@ async function onActionPicked(ev: CustomEvent) {
             <Icon name="more" :size="16" color="var(--muted-2)" />
           </div>
         </div>
+        </template>
       </ion-content>
     </div>
 
-    <!-- Paste-link sheet — sits over the playlist instead of replacing it. -->
+    <!-- Add card modal — same iOS card-recession style as Invite/Mirror/etc.
+         Was a draggable sheet; switched to card for consistency with the
+         rest of the modal trays in the app. -->
     <ion-modal
       :is-open="shareSheetOpen"
-      :initial-breakpoint="0.85"
-      :breakpoints="[0, 0.85]"
-      :handle="true"
+      :presenting-element="presentingElement ?? undefined"
       @did-present="onShareSheetPresented"
       @did-dismiss="shareSheetOpen = false"
     >
@@ -531,5 +773,38 @@ async function onActionPicked(ev: CustomEvent) {
       :header="playlist?.name"
       @did-dismiss="actionSheetOpen = false; onActionPicked($event as CustomEvent)"
     />
+
+    <!-- Invite card modal — slides up over the playlist with iOS-style card recession. -->
+    <ion-modal
+      :is-open="inviteOpen"
+      :presenting-element="presentingElement ?? undefined"
+      @did-dismiss="inviteOpen = false"
+    >
+      <InvitePage :playlist-id="playlistId" @close="inviteOpen = false" />
+    </ion-modal>
+
+    <!-- Mirror card modal — same card-recession style as Invite. -->
+    <ion-modal
+      :is-open="mirrorOpen"
+      :presenting-element="presentingElement ?? undefined"
+      @did-dismiss="mirrorOpen = false"
+    >
+      <MirrorPage :playlist-id="playlistId" @close="mirrorOpen = false" />
+    </ion-modal>
+
+    <!-- Track card modal — was a sheet with breakpoints; switched to card
+         for consistency with the rest of the modal trays. -->
+    <ion-modal
+      :is-open="trackOpenId !== null"
+      :presenting-element="presentingElement ?? undefined"
+      @did-dismiss="trackOpenId = null"
+    >
+      <TrackDetailPage
+        v-if="trackOpenId"
+        :playlist-id="playlistId"
+        :track-id="trackOpenId"
+        @close="trackOpenId = null"
+      />
+    </ion-modal>
   </ion-page>
 </template>

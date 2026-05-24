@@ -6,7 +6,7 @@ import { exchangeCode, getCurrentUser, createPlaylist } from "../_shared/spotify
 import { supabaseAsUser, supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 import { corsResponse, handlePreflight } from "../_shared/cors.ts";
 
-export function decodeState(state: string): { playlist_id: string; jwt: string } {
+export function decodeState(state: string): { playlist_id?: string; jwt: string } {
   return JSON.parse(atob(state));
 }
 
@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
   }
   if (!code || !state) return corsResponse("Missing code or state", { status: 400 });
 
-  let playlist_id: string;
+  let playlist_id: string | undefined;
   let jwt: string;
   try {
     ({ playlist_id, jwt } = decodeState(state));
@@ -97,6 +97,34 @@ Deno.serve(async (req) => {
     });
   }
 
+  // Always persist the OAuth tokens — both the per-playlist (Mirror page) and
+  // connection-only (Settings "Connect Spotify") flows want this row.
+  const admin = supabaseAdmin();
+  const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+
+  await admin.from("service_connections").upsert({
+    user_id: user.id,
+    service: "spotify",
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token ?? null,
+    expires_at: expiresAt,
+    service_user_id: spotifyUser.id,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "user_id,service" });
+
+  // Connection-only flow: no playlist_id in state means the user is just
+  // setting up Spotify in Settings. Stop here — no native playlist, no
+  // mirror_target. Future mirror creation reuses these tokens directly.
+  if (!playlist_id) {
+    return htmlPage({
+      title: "Spotify connected",
+      body:
+        `You're connected as <b>${spotifyUser.id}</b>. New playlists you join can now mirror to your Spotify automatically.`,
+      close: true,
+    });
+  }
+
+  // Per-playlist flow: create the native Spotify playlist + mirror_target row.
   const { data: playlistRow } = await userClient
     .from("playlists")
     .select("id, name, description")
@@ -109,7 +137,6 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Step 5: create the mirror playlist on Spotify.
   let spotifyPlaylist;
   try {
     spotifyPlaylist = await createPlaylist(
@@ -142,20 +169,6 @@ Deno.serve(async (req) => {
       body: msg,
     });
   }
-
-  // Step 6: persist tokens + mirror_target.
-  const admin = supabaseAdmin();
-  const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
-
-  await admin.from("service_connections").upsert({
-    user_id: user.id,
-    service: "spotify",
-    access_token: tokens.access_token,
-    refresh_token: tokens.refresh_token ?? null,
-    expires_at: expiresAt,
-    service_user_id: spotifyUser.id,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: "user_id,service" });
 
   await admin.from("mirror_targets").insert({
     user_id: user.id,

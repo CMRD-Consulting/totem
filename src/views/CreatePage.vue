@@ -1,45 +1,78 @@
 <script setup lang="ts">
-import { IonPage, onIonViewDidEnter } from '@ionic/vue';
-import { computed, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { IonPage, useIonRouter } from '@ionic/vue';
+import { computed, onMounted, ref } from 'vue';
 import IconButton from '@/components/IconButton.vue';
 import ScreenScroll from '@/components/ScreenScroll.vue';
 import ServiceGlyph from '@/components/ServiceGlyph.vue';
 import Sigil from '@/components/Sigil.vue';
+import ToggleRow from '@/components/ToggleRow.vue';
 import TopBar from '@/components/TopBar.vue';
 import { pillBtn } from '@/components/pillBtn';
 import { SERVICES } from '@/data/mock';
+import { supabase } from '@/lib/supabase';
+import { useAuthStore } from '@/stores/auth';
 import { usePlaylistsStore } from '@/stores/playlists';
 import type { ServiceKey } from '@/types';
 
-const router = useRouter();
+const emit = defineEmits<{ close: [] }>();
+
+const ionRouter = useIonRouter();
 const playlists = usePlaylistsStore();
+const auth = useAuthStore();
+
+async function pickService(s: ServiceKey) {
+  if (s === auth.preferredService) return;
+  try {
+    await auth.setPreferredService(s);
+  } catch (e) {
+    error.value = (e as Error).message;
+  }
+}
 const name = ref('');
 const nameInput = ref<HTMLInputElement | null>(null);
 const hues: [number, number, number] = [16, 200, 60];
 const busy = ref(false);
 const error = ref<string | null>(null);
 
-// Focus the name input as soon as Ionic finishes the route transition.
-// onIonViewDidEnter fires after the page is in the DOM and visible — before
-// it would race the transition animation and steal focus mid-slide.
-onIonViewDidEnter(() => {
-  nameInput.value?.focus();
+// Mirror toggle — defaults ON if the user has Spotify connected, OFF + disabled
+// if not. Same pattern as JoinPage. v0 only mirrors to Spotify.
+const mirrorService: ServiceKey = 'spotify';
+const mirrorConnected = ref(false);
+const mirrorOn = ref(false);
+
+const mirrorSublabel = computed(() =>
+  mirrorConnected.value
+    ? 'new tracks sync to your account'
+    : `connect ${SERVICES[mirrorService].short} in Settings to enable`,
+);
+
+onMounted(async () => {
+  const { data } = await supabase
+    .from('service_connections')
+    .select('service')
+    .eq('service', mirrorService)
+    .maybeSingle();
+  mirrorConnected.value = !!data;
+  mirrorOn.value = mirrorConnected.value;
 });
+
+// Imperative focus handle — the parent IonModal calls this on @did-present so
+// focus lands only after the slide-up animation completes (firing earlier
+// loses to the transition and iOS won't raise the keyboard).
+function focus() {
+  nameInput.value?.focus();
+}
+defineExpose({ focus });
 
 const disabled = computed(() => !name.value.trim() || busy.value);
 const buttonStyle = computed(() => ({
-  ...pillBtn(true),
+  ...pillBtn(true, disabled.value),
   width: '100%',
   height: '50px',
   fontSize: '15px',
-  ...(disabled.value
-    ? {
-        background: 'var(--chip-strong)',
-        color: 'var(--muted-2)',
-        cursor: busy.value ? 'wait' : 'not-allowed',
-      }
-    : {}),
+  // pillBtn handles cursor: not-allowed when disabled. Override only the
+  // busy case, which feels more like "wait" than "you can't do this".
+  ...(busy.value ? { cursor: 'wait' as const } : {}),
 }));
 
 async function onCreate() {
@@ -48,8 +81,17 @@ async function onCreate() {
   error.value = null;
   try {
     const created = await playlists.create(name.value.trim());
-    if (created?.id) router.push(`/p/${created.id}`);
-    else router.push('/');
+    if (created?.id) {
+      // Await mirror creation BEFORE navigating so the playlist's mirror
+      // banner is populated on first render, not flickering in late.
+      if (mirrorOn.value && mirrorConnected.value) {
+        await playlists.ensureMirrorTarget(created.id, mirrorService);
+      }
+      // Route guard dismisses the modal as part of this navigation.
+      ionRouter.navigate(`/p/${created.id}`, 'forward', 'push');
+    } else {
+      emit('close');
+    }
   } catch (e) {
     error.value = (e as Error).message;
   } finally {
@@ -83,8 +125,14 @@ async function onJoin() {
   try {
     const token = extractToken(joinValue.value);
     const result = await playlists.joinByToken(token);
-    if (result?.playlist_id) router.push(`/p/${result.playlist_id}`);
-    else router.push('/');
+    if (result?.playlist_id) {
+      if (mirrorOn.value && mirrorConnected.value) {
+        await playlists.ensureMirrorTarget(result.playlist_id, mirrorService);
+      }
+      ionRouter.navigate(`/p/${result.playlist_id}`, 'forward', 'push');
+    } else {
+      emit('close');
+    }
   } catch (e) {
     error.value = (e as Error).message;
   } finally {
@@ -107,7 +155,7 @@ async function onJoin() {
     >
       <TopBar title="new playlist">
         <template #left>
-          <IconButton name="close" @click="router.push('/')" />
+          <IconButton name="close" label="Close" @click="emit('close')" />
         </template>
       </TopBar>
 
@@ -190,6 +238,9 @@ async function onJoin() {
             <button
               v-for="(s, k) in SERVICES"
               :key="k"
+              type="button"
+              :aria-pressed="auth.preferredService === k"
+              @click="pickService(k as ServiceKey)"
               :style="{
                 all: 'unset',
                 cursor: 'pointer',
@@ -197,9 +248,9 @@ async function onJoin() {
                 textAlign: 'center',
                 padding: '14px 8px',
                 borderRadius: '12px',
-                background: k === 'spotify' ? 'var(--accent-soft)' : 'var(--surface)',
+                background: auth.preferredService === k ? 'var(--accent-soft)' : 'var(--surface)',
                 border:
-                  k === 'spotify'
+                  auth.preferredService === k
                     ? '1.5px solid var(--accent)'
                     : '0.5px solid var(--divider)',
                 display: 'flex',
@@ -221,7 +272,16 @@ async function onJoin() {
           </div>
         </div>
 
-        <div style="padding: 32px 22px 0">
+        <div style="padding: 18px 16px 0">
+          <ToggleRow
+            v-model="mirrorOn"
+            :disabled="!mirrorConnected"
+            :label="`Mirror to your ${SERVICES[mirrorService].short}`"
+            :sublabel="mirrorSublabel"
+          />
+        </div>
+
+        <div style="padding: 18px 22px 0">
           <button :disabled="disabled" :style="buttonStyle" @click="onCreate">
             {{ busy ? 'creating…' : 'create playlist' }}
           </button>

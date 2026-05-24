@@ -1,9 +1,17 @@
 import type { CSSProperties } from 'vue';
 
-export function pillBtn(primary: boolean): CSSProperties {
+/**
+ * Standard pill button style.
+ *   primary  — uses the bold ink/surface palette; non-primary uses chip bg
+ *   disabled — drops opacity to 0.5 in addition to changing cursor, so the
+ *              disabled state isn't communicated by color alone (helps
+ *              colorblind users + screen readers see the disabled attr).
+ */
+export function pillBtn(primary: boolean, disabled = false): CSSProperties {
   return {
     all: 'unset',
-    cursor: 'pointer',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.5 : 1,
     boxSizing: 'border-box',
     flex: primary ? 1 : '0 0 auto',
     height: '38px',

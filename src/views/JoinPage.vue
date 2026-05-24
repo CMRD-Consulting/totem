@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { IonPage } from '@ionic/vue';
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import ToggleRow from '@/components/ToggleRow.vue';
 import Wordmark from '@/components/Wordmark.vue';
 import { pillBtn } from '@/components/pillBtn';
+import { SERVICES } from '@/data/mock';
+import { supabase } from '@/lib/supabase';
 import { usePlaylistsStore } from '@/stores/playlists';
+import type { ServiceKey } from '@/types';
 
 interface Preview {
   playlist_id: string;
@@ -22,11 +26,28 @@ const status = ref<Status>('loading');
 const preview = ref<Preview | null>(null);
 const error = ref<string | null>(null);
 
+// Mirror toggle state. v0 only mirrors to Spotify; once Apple/YouTube ship,
+// this reads `auth.preferredService` and the toggle label updates accordingly.
+const mirrorService: ServiceKey = 'spotify';
+const mirrorConnected = ref(false);
+const mirrorOn = ref(false);
+
 const token = route.params.token as string;
+
+const toggleSublabel = computed(() =>
+  mirrorConnected.value
+    ? 'new tracks sync to your account'
+    : `connect ${SERVICES[mirrorService].short} in Settings to enable`,
+);
 
 onMounted(async () => {
   try {
-    const previewResult = await playlists.previewInvite(token);
+    // Run preview + connection check in parallel — preview blocks the UI,
+    // connection check just gates the toggle, no need to wait serially.
+    const [previewResult] = await Promise.all([
+      playlists.previewInvite(token),
+      checkConnection(),
+    ]);
     if (!previewResult) throw new Error('No preview returned');
     preview.value = previewResult;
     // If the user is already a member of this playlist, skip the preview
@@ -36,12 +57,23 @@ onMounted(async () => {
       router.replace(`/p/${previewResult.playlist_id}`);
       return;
     }
+    // Default the toggle ON if the user's already connected, OFF if not.
+    mirrorOn.value = mirrorConnected.value;
     status.value = 'preview';
   } catch (e) {
     status.value = 'error';
     error.value = (e as Error).message;
   }
 });
+
+async function checkConnection() {
+  const { data } = await supabase
+    .from('service_connections')
+    .select('service')
+    .eq('service', mirrorService)
+    .maybeSingle();
+  mirrorConnected.value = !!data;
+}
 
 async function onJoin() {
   if (!preview.value) return;
@@ -50,6 +82,12 @@ async function onJoin() {
   try {
     const result = await playlists.joinByToken(token);
     if (!result?.playlist_id) throw new Error('No playlist returned from join');
+    // Await the mirror creation so the playlist page's loadMyMirrors() picks
+    // it up on first load — otherwise the banner pops in a beat late and the
+    // "auto-mirror" UX feels broken.
+    if (mirrorOn.value && mirrorConnected.value) {
+      await playlists.ensureMirrorTarget(result.playlist_id, mirrorService);
+    }
     router.replace(`/p/${result.playlist_id}`);
   } catch (e) {
     status.value = 'preview';
@@ -139,6 +177,15 @@ function onDecline() {
               fontVariantNumeric: 'tabular-nums',
             }"
           >{{ preview?.member_count }} {{ preview?.member_count === 1 ? 'friend' : 'friends' }} so far</div>
+
+          <div style="margin-top: 24px; text-align: left">
+            <ToggleRow
+              v-model="mirrorOn"
+              :disabled="!mirrorConnected"
+              :label="`Mirror to your ${SERVICES[mirrorService].short}`"
+              :sublabel="toggleSublabel"
+            />
+          </div>
 
           <div
             v-if="error"

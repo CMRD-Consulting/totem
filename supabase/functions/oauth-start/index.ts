@@ -16,17 +16,25 @@ Deno.serve((req) => {
   if (preflight) return preflight;
 
   const url = new URL(req.url);
-  const playlistId = url.searchParams.get("playlist_id");
+  const playlistId = url.searchParams.get("playlist_id"); // optional — see below
   const userJwt = url.searchParams.get("jwt");
-  if (!playlistId || !userJwt) {
-    return corsResponse("Missing playlist_id or jwt", { status: 400 });
+  if (!userJwt) {
+    return corsResponse("Missing jwt", { status: 400 });
   }
 
   const clientId = Deno.env.get("SPOTIFY_CLIENT_ID");
   if (!clientId) return corsResponse("SPOTIFY_CLIENT_ID not set", { status: 500 });
 
   const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/oauth-callback`;
-  const state = btoa(JSON.stringify({ playlist_id: playlistId, jwt: userJwt }));
+  // playlist_id is optional. Two callers today:
+  //   - Mirror page: passes a playlist_id, expects a mirror_target row created
+  //     in the callback for that playlist.
+  //   - Settings "Connect Spotify": no playlist_id, just stores the OAuth
+  //     tokens in service_connections so future per-playlist mirror creation
+  //     can skip the OAuth step entirely.
+  const stateBody: Record<string, string> = { jwt: userJwt };
+  if (playlistId) stateBody.playlist_id = playlistId;
+  const state = btoa(JSON.stringify(stateBody));
 
   const authorizeUrl = new URL(SPOTIFY_AUTHORIZE);
   authorizeUrl.searchParams.set("client_id", clientId);

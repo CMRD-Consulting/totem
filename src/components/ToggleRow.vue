@@ -1,16 +1,32 @@
 <script setup lang="ts">
-defineProps<{
-  label: string;
-  sublabel?: string;
-  modelValue: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    label: string;
+    sublabel?: string;
+    modelValue: boolean;
+    disabled?: boolean;
+  }>(),
+  { disabled: false },
+);
 
-defineEmits<{ 'update:modelValue': [boolean] }>();
+const emit = defineEmits<{ 'update:modelValue': [boolean] }>();
+
+function onTap() {
+  if (props.disabled) return;
+  emit('update:modelValue', !props.modelValue);
+}
 </script>
 
 <template>
   <div
-    @click="$emit('update:modelValue', !modelValue)"
+    role="switch"
+    tabindex="0"
+    :aria-checked="modelValue"
+    :aria-disabled="disabled"
+    :aria-label="label"
+    @click="onTap"
+    @keydown.space.prevent="onTap"
+    @keydown.enter.prevent="onTap"
     :style="{
       display: 'flex',
       alignItems: 'center',
@@ -20,7 +36,8 @@ defineEmits<{ 'update:modelValue': [boolean] }>();
       background: 'var(--surface)',
       border: '0.5px solid var(--divider)',
       marginBottom: '6px',
-      cursor: 'pointer',
+      cursor: disabled ? 'not-allowed' : 'pointer',
+      opacity: disabled ? 0.6 : 1,
     }"
   >
     <div style="flex: 1">

@@ -31,7 +31,7 @@ const wrapperStyle = computed(() => ({
 
 <template>
   <!-- Empty group: 3-stripe fallback -->
-  <div v-if="useStripes && hues" :style="wrapperStyle">
+  <div v-if="useStripes && hues" aria-hidden="true" :style="wrapperStyle">
     <div
       :style="{
         height: seg + 'px',
@@ -53,7 +53,7 @@ const wrapperStyle = computed(() => ({
   </div>
 
   <!-- Single track: full art -->
-  <div v-else-if="list.length === 1" :style="wrapperStyle">
+  <div v-else-if="list.length === 1" aria-hidden="true" :style="wrapperStyle">
     <AlbumArt :seed="list[0]" :size="size" :radius="0" />
   </div>
 

@@ -343,6 +343,35 @@ export const usePlaylistsStore = defineStore('playlists', () => {
   }
 
   /**
+   * Calls the create-mirror-target Edge Function. Idempotent — if a target
+   * already exists for (user, playlist, service), the server returns it
+   * instead of creating a second native playlist on Spotify. Awaiting this
+   * before navigating to a playlist ensures the mirror banner picks up on
+   * first load instead of flickering in late.
+   */
+  async function ensureMirrorTarget(
+    playlistId: string,
+    service: ServiceKey = 'spotify',
+  ): Promise<void> {
+    const { data: sess } = await supabase.auth.getSession();
+    if (!sess.session) return;
+    try {
+      await fetch(`${env.supabaseUrl}/functions/v1/create-mirror-target`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sess.session.access_token}`,
+          apikey: env.supabaseAnonKey,
+        },
+        body: JSON.stringify({ playlist_id: playlistId, service }),
+      });
+    } catch {
+      // Non-fatal — callers redirect anyway and the user can retry from
+      // the playlist's Mirror modal if it didn't take.
+    }
+  }
+
+  /**
    * Kicks off ingestion with an optimistic 'resolving' track row, then
    * resolves it inline:
    *   success → remove the pending entry + reload real tracks (DB row visible)
@@ -563,6 +592,7 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     create,
     joinByToken,
     previewInvite,
+    ensureMirrorTarget,
     ingestUrl,
     dismissPending,
     addReaction,

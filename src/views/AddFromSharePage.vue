@@ -83,7 +83,7 @@ function dismiss() {
     >
       <TopBar title="add to a playlist">
         <template #left>
-          <IconButton name="close" @click="dismiss" />
+          <IconButton name="close" label="Close" @click="dismiss" />
         </template>
       </TopBar>
 
@@ -164,6 +164,8 @@ function dismiss() {
           <button
             v-for="g in playlists.playlists"
             :key="g.id"
+            type="button"
+            :aria-label="`Add to ${g.name}`"
             @click="pickPlaylist(g.id)"
             :disabled="sending !== null"
             :style="{

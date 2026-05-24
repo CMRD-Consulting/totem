@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { IonPage, onIonViewWillEnter } from '@ionic/vue';
+import { IonPage } from '@ionic/vue';
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
-import { computed, ref } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { computed, onMounted, ref } from 'vue';
 import Icon from '@/components/Icon.vue';
 import IconButton from '@/components/IconButton.vue';
 import ScreenScroll from '@/components/ScreenScroll.vue';
@@ -16,15 +15,17 @@ import { usePlaylistsStore } from '@/stores/playlists';
 import { usersById } from '@/store/users';
 import type { ServiceKey } from '@/types';
 
-const router = useRouter();
-const route = useRoute();
+const props = defineProps<{ playlistId: string }>();
+const emit = defineEmits<{ close: [] }>();
+
 const playlists = usePlaylistsStore();
 const copied = ref(false);
 
-const playlist = computed(() => {
-  const id = route.params.playlistId as string;
-  return playlists.playlists.find((g) => g.id === id) ?? playlists.playlists[0];
-});
+const playlist = computed(
+  () =>
+    playlists.playlists.find((g) => g.id === props.playlistId) ??
+    playlists.playlists[0],
+);
 
 const inviteUrl = computed(() => {
   const token = playlist.value?.inviteToken ?? '';
@@ -33,7 +34,9 @@ const inviteUrl = computed(() => {
   return `${origin}/i/${token}`;
 });
 
-onIonViewWillEnter(async () => {
+// onMounted (not onIonViewWillEnter) because Invite is now hosted inside an
+// IonModal — the page lifecycle hooks tied to IonRouterOutlet won't fire.
+onMounted(async () => {
   if (!playlists.loaded) await playlists.loadList().catch(() => {});
 });
 
@@ -120,7 +123,7 @@ const serviceCount = (k: ServiceKey) =>
     >
       <TopBar title="invite friends">
         <template #left>
-          <IconButton name="close" @click="router.push(`/p/${playlist?.id}`)" />
+          <IconButton name="close" label="Close invite" @click="emit('close')" />
         </template>
       </TopBar>
 

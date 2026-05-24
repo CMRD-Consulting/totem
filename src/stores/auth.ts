@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { registerProfile } from '@/store/users';
 import type { ServiceKey } from '@/types';
 
 interface Profile {
@@ -26,6 +27,12 @@ export const useAuthStore = defineStore('auth', () => {
       .eq('id', user.value.id)
       .maybeSingle();
     profile.value = (data as Profile | null) ?? null;
+    // Mirror into the usersById cache so consumers (members tab, avatars,
+    // activity feed) read consistent data — otherwise loadProfile and
+    // loadList compete and whichever runs last wins.
+    if (profile.value) {
+      registerProfile(user.value.id, profile.value.display_name);
+    }
   }
 
   async function setPreferredService(service: ServiceKey) {
@@ -46,6 +53,10 @@ export const useAuthStore = defineStore('auth', () => {
       .eq('id', user.value.id);
     if (error) throw error;
     if (profile.value) profile.value = { ...profile.value, display_name: name };
+    // Push the new name into usersById so the playlist members tab updates
+    // without waiting for the next loadList. registerProfile mutates the
+    // existing entry in place, so any reactive consumer sees the change.
+    registerProfile(user.value.id, name);
   }
 
   async function init() {

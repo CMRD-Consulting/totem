@@ -14,7 +14,16 @@ function hueFromId(id: string): number {
 }
 
 export function registerProfile(id: string, displayName: string) {
-  if (usersById[id]) return;
+  const existing = usersById[id];
+  if (existing) {
+    // Already known — refresh name-derived fields in place so future renders
+    // pick up the new display_name. Preserves hue (deterministic from id)
+    // and service (mock friends seed real-looking values we don't want to
+    // overwrite with the hardcoded fallback below).
+    existing.name = displayName;
+    existing.initial = (displayName.trim()[0] ?? '?').toUpperCase();
+    return;
+  }
   usersById[id] = {
     id,
     name: displayName,

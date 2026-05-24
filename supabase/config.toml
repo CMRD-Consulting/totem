@@ -395,6 +395,9 @@ verify_jwt = false
 [functions.oauth-callback]
 verify_jwt = false
 
+[functions.create-mirror-target]
+verify_jwt = false
+
 [functions.mirror-sync]
 verify_jwt = false
 

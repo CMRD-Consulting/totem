@@ -6,7 +6,9 @@
   --surface: #1f1c26;
   --ink: #f1ece0;
   --muted: #9c948a;
-  --muted-2: #6b6359;
+  /* WCAG AA: was #6b6359 (3.16:1 on bg). Bumped to #918778 (~4.6:1) so
+     small captions (10–12px) clear the AA threshold for normal text. */
+  --muted-2: #918778;
   --divider: #2a2632;
   --divider-strong: #3a3445;
   --chip: rgba(255, 250, 240, 0.05);
@@ -22,7 +24,8 @@
   --surface: #fffcf7;
   --ink: #1a1714;
   --muted: #7a716a;
-  --muted-2: #a89e94;
+  /* Was #a89e94 (~2.2:1 on bg, fails AA). Darkened to ~4.6:1. */
+  --muted-2: #6b6357;
   --divider: #e8e1d5;
   --divider-strong: #d4ccbe;
   --chip: rgba(26, 23, 20, 0.05);
@@ -34,7 +37,8 @@
   --surface: #ffffff;
   --ink: #0f0e0c;
   --muted: #8a7f70;
-  --muted-2: #b5ab9a;
+  /* Was #b5ab9a (~2.0:1, fails). Darkened to ~4.6:1. */
+  --muted-2: #6e6457;
   --divider: #ede6d6;
   --divider-strong: #dcd2bd;
   --chip: rgba(15, 14, 12, 0.04);
@@ -56,6 +60,16 @@ body {
 
 /* Hide scrollbars in inner scrollers — preserves the prototype's clean look. */
 .totem-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* Same treatment for IonContent's internal scroller (Hub, Playlist, Settings).
+   The shadow DOM exposes the scroll element as the 'scroll' part. */
+ion-content::part(scroll) {
+  scrollbar-width: none; /* Firefox */
+}
+ion-content::part(scroll)::-webkit-scrollbar {
   width: 0;
   height: 0;
 }
@@ -84,4 +98,35 @@ ion-router-outlet,
 ion-page {
   --background: var(--bg);
   background: var(--bg);
+}
+
+/* Respect prefers-reduced-motion — collapse animations to instant rather
+   than removing them entirely (preserves state changes, just no spin). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Focus rings — only on KEYBOARD focus (not on mouse/tap, via :focus-visible).
+   Restores keyboard accessibility for buttons that use `all: unset`, without
+   bringing back the "ugly outline after every click" that drives designers
+   to nuke focus styles in the first place. Carmine accent + subtle offset
+   matches the brand. */
+button:focus-visible,
+a:focus-visible,
+[role='button']:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+/* Ionic surfaces with their own focus styling — let them handle it. */
+ion-button:focus-visible,
+ion-item:focus-visible {
+  outline: none;
 }

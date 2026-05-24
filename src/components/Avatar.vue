@@ -18,6 +18,8 @@ const friend = computed(
 
 <template>
   <div
+    :aria-label="friend.name"
+    role="img"
     :style="{
       width: size + 'px',
       height: size + 'px',
@@ -30,6 +32,10 @@ const friend = computed(
       fontFamily: 'Inter, system-ui',
       fontWeight: 600,
       fontSize: size * 0.42 + 'px',
+      // line-height: 1 collapses the line box to the glyph height so flex
+      // centering matches the letter's optical center. Default 1.2 leaves
+      // descender space at the bottom and pushes the letter visibly upward.
+      lineHeight: 1,
       letterSpacing: 0,
       flexShrink: 0,
       boxShadow: ring

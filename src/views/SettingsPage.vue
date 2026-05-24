@@ -4,10 +4,12 @@ import {
   IonPage,
   IonRefresher,
   IonRefresherContent,
-  onIonViewWillEnter,
+  alertController,
+  useIonRouter,
 } from '@ionic/vue';
-import { computed, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { Browser } from '@capacitor/browser';
+import { Capacitor } from '@capacitor/core';
+import { computed, onMounted, ref, watch } from 'vue';
 import Icon from '@/components/Icon.vue';
 import IconButton from '@/components/IconButton.vue';
 import SectionHeader from '@/components/SectionHeader.vue';
@@ -15,6 +17,7 @@ import ServiceGlyph from '@/components/ServiceGlyph.vue';
 import TopBar from '@/components/TopBar.vue';
 import { pillBtn } from '@/components/pillBtn';
 import { SERVICES } from '@/data/mock';
+import { env } from '@/lib/env';
 import { supabase } from '@/lib/supabase';
 import { state } from '@/store/state';
 import { useAuthStore } from '@/stores/auth';
@@ -27,7 +30,9 @@ interface Connection {
   updated_at: string;
 }
 
-const router = useRouter();
+const emit = defineEmits<{ close: [] }>();
+
+const ionRouter = useIonRouter();
 const auth = useAuthStore();
 const playlists = usePlaylistsStore();
 const connections = ref<Connection[]>([]);
@@ -48,7 +53,11 @@ async function loadConnections() {
   connections.value = (data ?? []) as Connection[];
 }
 
-onIonViewWillEnter(async () => {
+// onMounted (not onIonViewWillEnter) because Settings is now hosted inside an
+// IonModal, not the IonRouterOutlet — the page lifecycle hooks don't fire here.
+// IonModal destroys + recreates the contents on each open by default, so this
+// runs every time the user taps the settings icon.
+onMounted(async () => {
   await Promise.all([
     auth.loadProfile(),
     loadConnections(),
@@ -94,11 +103,111 @@ function pickTheme(t: ThemeKey) {
   state.theme = t;
 }
 
+const spotifyConnected = computed(() =>
+  connections.value.some((c) => c.service === 'spotify'),
+);
+
+// Connection-only OAuth: omit playlist_id so the callback writes
+// service_connections only (no mirror_target). After completion, future
+// per-playlist mirroring can reuse the stored tokens directly.
+// Backfill: after the user connects Spotify, surface a button to mirror all
+// the playlists they're already a member of (which existed before the
+// connection and so don't have mirror_target rows yet). Computed against
+// service_connections + playlist_members + mirror_targets via RLS reads.
+const playlistsToBackfill = ref<string[]>([]);
+const backfilling = ref(false);
+const backfillProgress = ref(0);
+
+async function refreshBackfillList() {
+  if (!spotifyConnected.value) {
+    playlistsToBackfill.value = [];
+    return;
+  }
+  // RLS scopes both reads to the current user — no user_id filter needed.
+  const [{ data: memberships }, { data: existing }] = await Promise.all([
+    supabase.from('playlist_members').select('playlist_id'),
+    supabase.from('mirror_targets').select('playlist_id').eq('service', 'spotify'),
+  ]);
+  const mirrored = new Set((existing ?? []).map((m) => m.playlist_id));
+  const memberIds = (memberships ?? []).map((m) => m.playlist_id);
+  playlistsToBackfill.value = memberIds.filter((id) => !mirrored.has(id));
+}
+
+watch(
+  spotifyConnected,
+  (connected) => {
+    if (connected) refreshBackfillList();
+    else playlistsToBackfill.value = [];
+  },
+  { immediate: true },
+);
+
+async function runBackfill() {
+  if (backfilling.value || playlistsToBackfill.value.length === 0) return;
+  backfilling.value = true;
+  backfillProgress.value = 0;
+  error.value = null;
+  // Sequential, not parallel: this is a one-shot setup, latency is fine, and
+  // we don't want to fan out N concurrent Spotify createPlaylist calls.
+  for (const playlistId of playlistsToBackfill.value) {
+    await playlists.ensureMirrorTarget(playlistId, 'spotify');
+    backfillProgress.value++;
+  }
+  await refreshBackfillList();
+  backfilling.value = false;
+}
+
+async function connectSpotify() {
+  error.value = null;
+  const { data: sess } = await supabase.auth.getSession();
+  if (!sess.session) {
+    error.value = 'Not signed in';
+    return;
+  }
+  const url =
+    `${env.supabaseUrl}/functions/v1/oauth-start` +
+    `?jwt=${encodeURIComponent(sess.session.access_token)}`;
+
+  if (Capacitor.isNativePlatform()) {
+    const sub = await Browser.addListener('browserFinished', async () => {
+      await sub.remove();
+      await loadConnections();
+    });
+    await Browser.open({ url });
+  } else {
+    const popup = window.open(url, '_blank');
+    if (popup) {
+      const interval = window.setInterval(() => {
+        if (popup.closed) {
+          window.clearInterval(interval);
+          loadConnections();
+        }
+      }, 800);
+    }
+  }
+}
+
 async function onSignOut() {
-  if (!window.confirm('Sign out?')) return;
-  await auth.signOut();
-  playlists.reset();
-  router.replace('/sign-in');
+  const alert = await alertController.create({
+    header: 'Sign out?',
+    message: 'You can sign back in anytime with the same provider.',
+    buttons: [
+      { text: 'Cancel', role: 'cancel' },
+      {
+        text: 'Sign out',
+        role: 'destructive',
+        handler: async () => {
+          await auth.signOut();
+          playlists.reset();
+          // 'root' direction resets the IonRouterOutlet stack to /sign-in.
+          // The router beforeEach guard dismisses the Settings modal in the
+          // same tick.
+          ionRouter.navigate('/sign-in', 'root', 'replace');
+        },
+      },
+    ],
+  });
+  await alert.present();
 }
 
 function relTime(iso: string | null): string {
@@ -128,7 +237,7 @@ function relTime(iso: string | null): string {
     >
       <TopBar title="settings">
         <template #left>
-          <IconButton name="back" @click="router.push('/')" />
+          <IconButton name="close" label="Close settings" @click="emit('close')" />
         </template>
       </TopBar>
 
@@ -185,6 +294,9 @@ function relTime(iso: string | null): string {
           <button
             v-for="(s, k) in SERVICES"
             :key="k"
+            type="button"
+            :aria-pressed="auth.preferredService === k"
+            :aria-label="`Use ${s.name} as your preferred service`"
             @click="pickService(k as ServiceKey)"
             :style="{
               all: 'unset',
@@ -238,6 +350,9 @@ function relTime(iso: string | null): string {
           <button
             v-for="t in themes"
             :key="t.key"
+            type="button"
+            :aria-pressed="state.theme === t.key"
+            :aria-label="`Use ${t.label} theme — ${t.sub}`"
             @click="pickTheme(t.key)"
             :style="{
               all: 'unset',
@@ -275,19 +390,105 @@ function relTime(iso: string | null): string {
         <!-- Connections -->
         <SectionHeader :style-override="{ marginTop: '24px' }">connected services</SectionHeader>
         <div style="padding: 0 22px">
+          <button
+            v-if="!spotifyConnected"
+            @click="connectSpotify"
+            :style="{
+              all: 'unset',
+              cursor: 'pointer',
+              boxSizing: 'border-box',
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '12px 14px',
+              borderRadius: '12px',
+              background: 'var(--surface)',
+              border: '0.5px solid var(--divider)',
+              marginBottom: '8px',
+            }"
+          >
+            <ServiceGlyph service="spotify" :size="22" :color="SERVICES.spotify.color" />
+            <div style="flex: 1; text-align: left">
+              <div
+                :style="{
+                  fontFamily: 'Inter',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                  color: 'var(--ink)',
+                }"
+              >Connect Spotify</div>
+              <div
+                :style="{
+                  fontFamily: 'Inter',
+                  fontSize: '11.5px',
+                  color: 'var(--muted)',
+                  marginTop: '1px',
+                }"
+              >one-time setup so future playlists can mirror automatically</div>
+            </div>
+            <Icon name="chevron" :size="14" color="var(--muted-2)" />
+          </button>
           <div
-            v-if="connections.length === 0"
+            v-if="!spotifyConnected"
             :style="{
               fontFamily: 'Inter',
-              fontSize: '12.5px',
-              color: 'var(--muted)',
-              padding: '4px 0 8px',
+              fontSize: '11.5px',
+              color: 'var(--muted-2)',
+              padding: '4px 4px 8px',
               lineHeight: 1.4,
             }"
           >
-            no services connected yet. open a playlist and tap the link icon
-            to mirror to your account.
+            Apple Music and YouTube Music are coming in v1.
           </div>
+
+          <!-- Backfill: only shows when Spotify is connected AND there are
+               playlists the user is in that don't yet have a mirror_target. -->
+          <button
+            v-if="spotifyConnected && playlistsToBackfill.length > 0"
+            @click="runBackfill"
+            :disabled="backfilling"
+            :style="{
+              all: 'unset',
+              cursor: backfilling ? 'wait' : 'pointer',
+              boxSizing: 'border-box',
+              width: '100%',
+              padding: '12px 14px',
+              borderRadius: '12px',
+              background: 'var(--accent-soft)',
+              border: '1px solid var(--accent)',
+              marginBottom: '8px',
+              opacity: backfilling ? 0.7 : 1,
+            }"
+          >
+            <div
+              :style="{
+                fontFamily: 'Inter',
+                fontWeight: 600,
+                fontSize: '13.5px',
+                color: 'var(--accent)',
+              }"
+            >
+              {{
+                backfilling
+                  ? `mirroring ${backfillProgress} of ${playlistsToBackfill.length}…`
+                  : `Mirror ${playlistsToBackfill.length} existing ${
+                      playlistsToBackfill.length === 1 ? 'playlist' : 'playlists'
+                    } to Spotify`
+              }}
+            </div>
+            <div
+              v-if="!backfilling"
+              :style="{
+                fontFamily: 'Inter',
+                fontSize: '11.5px',
+                color: 'var(--accent)',
+                opacity: 0.7,
+                marginTop: '2px',
+                lineHeight: 1.35,
+              }"
+            >one-time setup for playlists you joined before connecting</div>
+          </button>
           <div
             v-for="c in connections"
             :key="c.service"

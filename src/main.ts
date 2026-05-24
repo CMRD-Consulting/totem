@@ -38,7 +38,11 @@ import '@ionic/vue/css/palettes/dark.system.css';
 import './theme/variables.css';
 
 const app = createApp(App)
-  .use(IonicVue)
+  // Force iOS mode everywhere so page transitions are the consistent
+  // left-slide / right-slide stack push, not Material's fade-through (which
+  // is the auto default on non-iOS web). Card modal recession and sheet
+  // modals still work the same; only page-level transitions change.
+  .use(IonicVue, { mode: 'ios' })
   .use(createPinia())
   .use(router);
 
