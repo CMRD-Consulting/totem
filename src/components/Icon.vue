@@ -21,6 +21,36 @@ defineProps<{
     <path d="M12 5v14M5 12h14" />
   </svg>
   <svg
+    v-else-if="name === 'add-reaction'"
+    :width="size ?? 20"
+    :height="size ?? 20"
+    viewBox="0 0 24 24"
+    fill="none"
+  >
+    <circle
+      cx="10.6"
+      cy="12"
+      r="6.65"
+      :stroke="color ?? 'currentColor'"
+      stroke-width="1.45"
+      stroke-linecap="round"
+    />
+    <circle cx="8.05" cy="10.55" r="0.8" :fill="color ?? 'currentColor'" />
+    <circle cx="13.15" cy="10.55" r="0.8" :fill="color ?? 'currentColor'" />
+    <path
+      d="M7.35 13.75q3.05 2.35 6.1 0"
+      :stroke="color ?? 'currentColor'"
+      stroke-width="1.45"
+      stroke-linecap="round"
+    />
+    <path
+      d="M17 6.4v2.85M15.58 7.82h2.85"
+      :stroke="color ?? 'currentColor'"
+      stroke-width="1.65"
+      stroke-linecap="round"
+    />
+  </svg>
+  <svg
     v-else-if="name === 'search'"
     :width="size ?? 20"
     :height="size ?? 20"

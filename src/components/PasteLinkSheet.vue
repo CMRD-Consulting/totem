@@ -2,7 +2,10 @@
 import { computed, ref, watch } from 'vue';
 import Avatar from '@/components/Avatar.vue';
 import Icon from '@/components/Icon.vue';
+import IconButton from '@/components/IconButton.vue';
 import Sigil from '@/components/Sigil.vue';
+import TopBar from '@/components/TopBar.vue';
+import { peekMusicClipboard, shortUrl } from '@/lib/musicUrl';
 import { usePlaylistsStore } from '@/stores/playlists';
 
 const props = defineProps<{ playlistId: string; isOpen: boolean }>();
@@ -22,46 +25,8 @@ const playlist = computed(() => playlists.playlists.find((g) => g.id === props.p
 
 const isLikelyUrl = computed(() => /^https?:\/\//i.test(url.value.trim()));
 
-// Hosts we can resolve via Songlink → ingest. Spotify URI scheme is also valid.
-const MUSIC_HOSTS = new Set([
-  'open.spotify.com',
-  'spotify.link',
-  'music.apple.com',
-  'itunes.apple.com',
-  'music.youtube.com',
-  'youtube.com',
-  'm.youtube.com',
-  'youtu.be',
-]);
-
-function isMusicUrl(s: string): boolean {
-  const trimmed = s.trim();
-  if (/^spotify:(track|album|playlist):/i.test(trimmed)) return true;
-  try {
-    const u = new URL(trimmed);
-    return MUSIC_HOSTS.has(u.hostname.replace(/^www\./, ''));
-  } catch {
-    return false;
-  }
-}
-
-/** Display label: drop the scheme + truncate so the chip stays one line. */
-function shortUrl(s: string): string {
-  let pretty = s.replace(/^https?:\/\/(www\.)?/, '');
-  if (pretty.length > 38) pretty = pretty.slice(0, 36) + '…';
-  return pretty;
-}
-
 async function peekClipboard() {
-  // navigator.clipboard.readText works in iOS 14.5+ WKWebView. On first call
-  // the user may see a system "Allow paste?" prompt; we silently swallow
-  // denials and just don't show the chip.
-  try {
-    const text = (await navigator.clipboard.readText()).trim();
-    clipboardSuggestion.value = text && isMusicUrl(text) ? text : null;
-  } catch {
-    clipboardSuggestion.value = null;
-  }
+  clipboardSuggestion.value = await peekMusicClipboard();
 }
 
 // Reset transient state every time the sheet opens.
@@ -124,53 +89,13 @@ defineExpose({ focus });
       box-sizing: border-box;
     "
   >
-    <!-- Header -->
-    <div
-      style="
-        padding: 4px 20px 14px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      "
-    >
-      <div
-        style="
-          width: 36px;
-          height: 36px;
-          border-radius: 9px;
-          background: var(--ink);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: var(--surface);
-        "
-      >
-        <Icon name="totem" :size="18" />
-      </div>
-      <div style="flex: 1">
-        <div
-          :style="{
-            fontFamily: 'Inter',
-            fontWeight: 600,
-            fontSize: '14px',
-            color: 'var(--ink)',
-          }"
-        >Add a song</div>
-        <div
-          :style="{
-            fontFamily: 'Inter',
-            fontSize: '11.5px',
-            color: 'var(--muted)',
-          }"
-        >paste a Spotify, Apple Music, or YouTube Music link</div>
-      </div>
-      <button
-        @click="emit('close')"
-        style="all: unset; cursor: pointer; color: var(--muted)"
-      >
-        <Icon name="close" :size="18" />
-      </button>
-    </div>
+    <!-- Header — standard TopBar pattern matches every other modal tray
+         (Settings, Create, Invite, Mirror, Track), with close on the left. -->
+    <TopBar title="add a song">
+      <template #left>
+        <IconButton name="close" label="Close" @click="emit('close')" />
+      </template>
+    </TopBar>
 
     <!-- Target playlist preview -->
     <div
@@ -369,7 +294,7 @@ defineExpose({ focus });
           <Icon name="check" :size="18" />
           adding to {{ playlist?.name }}
         </template>
-        <template v-else>send to playlist</template>
+        <template v-else>add to playlist</template>
       </button>
     </div>
   </div>

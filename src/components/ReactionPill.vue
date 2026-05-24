@@ -27,7 +27,7 @@ defineProps<{
       lineHeight: 1,
     }"
   >
-    <span style="font-size: 12px">{{ emoji }}</span>
+    <span style="font-size: 10px">{{ emoji }}</span>
     <span style="font-variant-numeric: tabular-nums">{{ count }}</span>
   </button>
 </template>

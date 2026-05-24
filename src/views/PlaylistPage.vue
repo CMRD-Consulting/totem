@@ -18,6 +18,7 @@ import AvatarStack from '@/components/AvatarStack.vue';
 import Icon from '@/components/Icon.vue';
 import IconButton from '@/components/IconButton.vue';
 import PasteLinkSheet from '@/components/PasteLinkSheet.vue';
+import ReactionPickerTray from '@/components/ReactionPickerTray.vue';
 import ServiceGlyph from '@/components/ServiceGlyph.vue';
 import Sigil from '@/components/Sigil.vue';
 import TopBar from '@/components/TopBar.vue';
@@ -64,7 +65,14 @@ const actionSheetOpen = ref(false);
 const inviteOpen = ref(false);
 const mirrorOpen = ref(false);
 const trackOpenId = ref<string | null>(null);
+const reactionTrayTrackId = ref<string | null>(null);
 const myMirrors = ref<MyMirror[]>([]);
+
+function onReactionTrayPick(emoji: string) {
+  const id = reactionTrayTrackId.value;
+  reactionTrayTrackId.value = null;
+  if (id) playlists.toggleReaction(id, emoji).catch(() => {});
+}
 
 // Used by card modals hosted on this page (Invite, eventually Mirror + Track)
 // to give the iOS card-stack recession its target. Pointing at the router
@@ -583,6 +591,7 @@ async function onActionPicked(ev: CustomEvent) {
             :track="t"
             @tap="trackOpenId = t.id"
             @dismiss="playlists.dismissPending(playlist.id, t.id)"
+            @open-reaction-picker="reactionTrayTrackId = $event"
           />
           <div
             v-if="tracks.length === 0"
@@ -806,5 +815,11 @@ async function onActionPicked(ev: CustomEvent) {
         @close="trackOpenId = null"
       />
     </ion-modal>
+
+    <ReactionPickerTray
+      :is-open="reactionTrayTrackId !== null"
+      @close="reactionTrayTrackId = null"
+      @pick="onReactionTrayPick"
+    />
   </ion-page>
 </template>

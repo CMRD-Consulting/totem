@@ -2,6 +2,7 @@
 import { IonPage } from '@ionic/vue';
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import Spinner from '@/components/Spinner.vue';
 import ToggleRow from '@/components/ToggleRow.vue';
 import Wordmark from '@/components/Wordmark.vue';
 import { pillBtn } from '@/components/pillBtn';
@@ -121,29 +122,9 @@ function onDecline() {
 
         <!-- Loading: resolving the invite token -->
         <template v-if="status === 'loading'">
-          <div
-            :style="{
-              fontFamily: '&quot;Instrument Serif&quot;, Georgia, serif',
-              fontStyle: 'italic',
-              fontSize: '20px',
-              color: 'var(--muted)',
-              marginTop: '24px',
-              lineHeight: 1.35,
-            }"
-          >loading invite…</div>
-          <div
-            :style="{
-              marginTop: '20px',
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              border: '2px solid var(--divider)',
-              borderTopColor: 'var(--accent)',
-              animation: 'totem-spin 0.8s linear infinite',
-              marginLeft: 'auto',
-              marginRight: 'auto',
-            }"
-          />
+          <div style="margin-top: 24px">
+            <Spinner :size="32" label="loading invite…" />
+          </div>
         </template>
 
         <!-- Preview: confirm before joining -->
@@ -300,10 +281,3 @@ function onDecline() {
   </ion-page>
 </template>
 
-<style scoped>
-@keyframes totem-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-</style>

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { IonPage } from '@ionic/vue';
 import { computed } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
 import AlbumArt from '@/components/AlbumArt.vue';
 import Avatar from '@/components/Avatar.vue';
 import AvatarStack from '@/components/AvatarStack.vue';
@@ -12,44 +11,27 @@ import ServiceGlyph from '@/components/ServiceGlyph.vue';
 import TopBar from '@/components/TopBar.vue';
 import { SERVICES } from '@/data/mock';
 import { state } from '@/store/state';
-import { useAuthStore } from '@/stores/auth';
 import { usePlaylistsStore } from '@/stores/playlists';
 import { usersById } from '@/store/users';
 import type { ServiceKey } from '@/types';
 
-const router = useRouter();
-const route = useRoute();
-const playlists = usePlaylistsStore();
-const auth = useAuthStore();
+const props = defineProps<{ playlistId: string; trackId: string }>();
+const emit = defineEmits<{ close: [] }>();
 
-const playlistId = computed(() => route.params.playlistId as string);
-const trackId = computed(() => route.params.trackId as string);
+const playlists = usePlaylistsStore();
 
 const track = computed(() => {
   // Prefer the live track from the playlists store; fall back to mock for demo data.
-  const real = playlists.tracksByPlaylistId[playlistId.value]?.find((t) => t.id === trackId.value);
-  return real ?? state.tracks.find((t) => t.id === trackId.value) ?? state.tracks[0];
+  const real = playlists.tracksByPlaylistId[props.playlistId]?.find(
+    (t) => t.id === props.trackId,
+  );
+  return real ?? state.tracks.find((t) => t.id === props.trackId) ?? state.tracks[0];
 });
 const adder = computed(() => usersById[track.value.adder]);
 const reactions = computed(
   () => playlists.reactionsByTrackId[track.value.id] ?? track.value.reactions,
 );
-const myUserId = computed(() => auth.user?.id ?? state.meId);
-const myReactions = computed(
-  () =>
-    new Set(reactions.value.filter((r) => r.by.includes(myUserId.value)).map((r) => r.e)),
-);
 
-function onReact(emoji: string) {
-  // Real tracks (DB-backed): hit the store. Mock fallback: silently no-op
-  // since reactions on mock tracks were a v0-design-only concept.
-  const real = playlists.tracksByPlaylistId[playlistId.value]?.find(
-    (t) => t.id === track.value.id,
-  );
-  if (real) playlists.toggleReaction(track.value.id, emoji).catch(() => {});
-}
-
-const quickReacts = ['🔥', '❤️', '😭', '👑', '💔', '🌙'];
 const services: ServiceKey[] = ['spotify', 'apple', 'youtube'];
 </script>
 
@@ -67,10 +49,10 @@ const services: ServiceKey[] = ['spotify', 'apple', 'youtube'];
     >
       <TopBar>
         <template #left>
-          <IconButton name="back" @click="router.push(`/p/${playlistId}`)" />
+          <IconButton name="close" label="Close track" @click="emit('close')" />
         </template>
         <template #right>
-          <IconButton name="more" />
+          <IconButton name="more" label="More actions" />
         </template>
       </TopBar>
 
@@ -188,8 +170,7 @@ const services: ServiceKey[] = ['spotify', 'apple', 'youtube'];
           </button>
         </div>
 
-        <!-- React -->
-        <div style="padding: 20px 22px 0">
+        <div v-if="reactions.length > 0" style="padding: 20px 22px 0">
           <div
             :style="{
               fontFamily: '&quot;Instrument Serif&quot;, Georgia, serif',
@@ -198,33 +179,9 @@ const services: ServiceKey[] = ['spotify', 'apple', 'youtube'];
               color: 'var(--muted)',
               marginBottom: '10px',
             }"
-          >react</div>
-          <div style="display: flex; gap: 6px; flex-wrap: wrap">
-            <button
-              v-for="e in quickReacts"
-              :key="e"
-              @click="onReact(e)"
-              :style="{
-                all: 'unset',
-                cursor: 'pointer',
-                width: '42px',
-                height: '42px',
-                borderRadius: '12px',
-                background: myReactions.has(e) ? 'var(--accent-soft)' : 'var(--surface)',
-                border: myReactions.has(e)
-                  ? '1px solid var(--accent)'
-                  : '0.5px solid var(--divider)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '22px',
-              }"
-            >{{ e }}</button>
-          </div>
+          >reactions</div>
           <div
-            v-if="reactions.length > 0"
             style="
-              margin-top: 14px;
               padding: 10px 12px;
               background: var(--chip);
               border-radius: 10px;
