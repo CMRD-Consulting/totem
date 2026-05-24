@@ -5,9 +5,27 @@
 import { exchangeCode, getCurrentUser, createPlaylist } from "../_shared/spotify.ts";
 import { supabaseAsUser, supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 import { corsResponse, handlePreflight } from "../_shared/cors.ts";
+import { OAUTH_STATE_MAX_AGE_MS } from "../_shared/oauthState.ts";
 
-export function decodeState(state: string): { playlist_id?: string; jwt: string } {
-  return JSON.parse(atob(state));
+/** Look up a state row by token, enforcing the freshness window. The row is
+ * deleted as a side effect — state tokens are single-use, so even if the
+ * caller's flow fails after this point the token can't be replayed. */
+export async function consumeStateToken(
+  admin: ReturnType<typeof supabaseAdmin>,
+  stateToken: string,
+): Promise<{ jwt: string; playlist_id: string | null } | null> {
+  const { data: row } = await admin
+    .from("oauth_states")
+    .select("jwt, playlist_id, created_at")
+    .eq("state_token", stateToken)
+    .maybeSingle();
+  if (!row) return null;
+  // Best-effort delete — if it fails (e.g. row already gone), proceed
+  // anyway. The created_at check below is the authoritative freshness gate.
+  await admin.from("oauth_states").delete().eq("state_token", stateToken);
+  const age = Date.now() - new Date(row.created_at).getTime();
+  if (age > OAUTH_STATE_MAX_AGE_MS) return null;
+  return { jwt: row.jwt, playlist_id: row.playlist_id };
 }
 
 const REQUIRED_SCOPES = ["playlist-modify-private", "playlist-modify-public"];
@@ -41,13 +59,16 @@ Deno.serve(async (req) => {
   }
   if (!code || !state) return corsResponse("Missing code or state", { status: 400 });
 
-  let playlist_id: string | undefined;
-  let jwt: string;
-  try {
-    ({ playlist_id, jwt } = decodeState(state));
-  } catch {
-    return corsResponse("Invalid state", { status: 400 });
+  const admin = supabaseAdmin();
+  const resolved = await consumeStateToken(admin, state);
+  if (!resolved) {
+    return htmlPage({
+      title: "OAuth state expired",
+      body: "The Spotify sign-in link is no longer valid (single-use, 10 minute window). Start the connect flow again from the app.",
+    });
   }
+  const playlist_id: string | undefined = resolved.playlist_id ?? undefined;
+  const jwt = resolved.jwt;
 
   const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/oauth-callback`;
 
@@ -99,7 +120,7 @@ Deno.serve(async (req) => {
 
   // Always persist the OAuth tokens — both the per-playlist (Mirror page) and
   // connection-only (Settings "Connect Spotify") flows want this row.
-  const admin = supabaseAdmin();
+  // admin client was already created above for consumeStateToken.
   const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
   await admin.from("service_connections").upsert({
