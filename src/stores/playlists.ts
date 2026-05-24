@@ -327,6 +327,21 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     return data?.[0] as { playlist_id: string; name: string } | undefined;
   }
 
+  async function previewInvite(token: string) {
+    const { data, error: err } = await supabase.rpc('preview_invite', {
+      p_token: token,
+    });
+    if (err) throw err;
+    return data?.[0] as
+      | {
+          playlist_id: string;
+          name: string;
+          member_count: number;
+          already_member: boolean;
+        }
+      | undefined;
+  }
+
   /**
    * Kicks off ingestion with an optimistic 'resolving' track row, then
    * resolves it inline:
@@ -547,6 +562,7 @@ export const usePlaylistsStore = defineStore('playlists', () => {
     loadRecentActivity,
     create,
     joinByToken,
+    previewInvite,
     ingestUrl,
     dismissPending,
     addReaction,
