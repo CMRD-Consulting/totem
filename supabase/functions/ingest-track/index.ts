@@ -71,12 +71,21 @@ Deno.serve(async (req) => {
     return corsResponse("Missing url or playlist_id", { status: 400 });
   }
 
-  // Membership check via user-scoped client (RLS enforces it).
+  // Membership check: filter to the caller's own row, not the whole member
+  // list. RLS lets members read every membership row for a playlist they
+  // belong to (so the friends tab works), so a query without a user_id
+  // filter would return N rows on a playlist with N members. .maybeSingle()
+  // errors on >1 rows → data goes null → false-negative 403.
   const userClient = supabaseAsUser(jwt);
+  const { data: { user } } = await userClient.auth.getUser();
+  if (!user) {
+    return corsResponse("Unauthorized", { status: 401 });
+  }
   const { data: membership } = await userClient
     .from("playlist_members")
     .select("playlist_id")
     .eq("playlist_id", body.playlist_id)
+    .eq("user_id", user.id)
     .maybeSingle();
   if (!membership) {
     return corsResponse("Not a member of this playlist", { status: 403 });
@@ -117,10 +126,7 @@ Deno.serve(async (req) => {
     .maybeSingle();
   const nextPosition = (maxRow?.position ?? 0) + 1.0;
 
-  // Get the user id from JWT.
-  const { data: { user } } = await userClient.auth.getUser();
-  if (!user) return corsResponse("Unauthorized", { status: 401 });
-
+  // user resolved at the top of the handler during the membership check.
   const { error: insertErr } = await admin.from("playlist_tracks").insert({
     playlist_id: body.playlist_id,
     track_id: trackId,
