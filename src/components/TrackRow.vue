@@ -16,13 +16,10 @@ const props = withDefaults(
   defineProps<{
     track: Track;
     density?: 'cozy' | 'compact';
-    /** 'full' renders the service glyph in brand color (green for Spotify,
-     *  etc.) — matches the Friends tab. 'subtle' uses muted-2 for a quieter
-     *  metadata look; 'off' hides it entirely. Default 'full' for visual
-     *  consistency with member rows. */
     showService?: 'off' | 'subtle' | 'full';
+    mirrorError?: string | null;
   }>(),
-  { density: 'cozy', showService: 'full' },
+  { density: 'cozy', showService: 'full', mirrorError: null },
 );
 
 const emit = defineEmits<{
@@ -269,7 +266,26 @@ function onClickRow() {
 
       <!-- Service-availability badge — neutral, never anxious -->
       <div
-        v-if="notOnMyService"
+        v-if="mirrorError"
+        :style="{
+          marginTop: '6px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '5px',
+          padding: '2px 8px 2px 7px',
+          borderRadius: '999px',
+          background: 'var(--chip)',
+          fontFamily: '&quot;Instrument Serif&quot;, Georgia, serif',
+          fontStyle: 'italic',
+          fontSize: '11.5px',
+          color: 'var(--muted)',
+          lineHeight: 1.3,
+        }"
+      >
+        couldn't mirror to {{ SERVICES[auth.preferredService].short }}
+      </div>
+      <div
+        v-else-if="notOnMyService"
         :style="{
           marginTop: '6px',
           display: 'inline-flex',

@@ -13,6 +13,7 @@ import {
 interface MockRow {
   jwt: string;
   playlist_id: string | null;
+  service: string;
   created_at: string;
 }
 
@@ -79,11 +80,16 @@ Deno.test("consumeStateToken returns jwt + playlist_id and deletes the row", asy
     row: {
       jwt: "user-jwt",
       playlist_id: "playlist-uuid",
+      service: "spotify",
       created_at: new Date().toISOString(),
     },
   });
   const result = await consumeStateToken(admin, "tok");
-  assertEquals(result, { jwt: "user-jwt", playlist_id: "playlist-uuid" });
+  assertEquals(result, {
+    jwt: "user-jwt",
+    playlist_id: "playlist-uuid",
+    service: "spotify",
+  });
   // exactly one delete, on oauth_states, keyed by state_token
   assertEquals(deletes.length, 1);
   assertEquals(deletes[0], {
@@ -96,7 +102,7 @@ Deno.test("consumeStateToken returns jwt + playlist_id and deletes the row", asy
 Deno.test("consumeStateToken returns null for a row older than the max age", async () => {
   const stale = new Date(Date.now() - OAUTH_STATE_MAX_AGE_MS - 5_000).toISOString();
   const { admin } = makeAdminMock({
-    row: { jwt: "j", playlist_id: null, created_at: stale },
+    row: { jwt: "j", playlist_id: null, service: "spotify", created_at: stale },
   });
   const result = await consumeStateToken(admin, "tok");
   assertEquals(result, null);
@@ -106,7 +112,7 @@ Deno.test("consumeStateToken accepts a row right at the edge of the window", asy
   const justInside = new Date(Date.now() - (OAUTH_STATE_MAX_AGE_MS - 1_000))
     .toISOString();
   const { admin } = makeAdminMock({
-    row: { jwt: "j", playlist_id: null, created_at: justInside },
+    row: { jwt: "j", playlist_id: null, service: "spotify", created_at: justInside },
   });
   const result = await consumeStateToken(admin, "tok");
   assertEquals(result?.jwt, "j");

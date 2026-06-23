@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { isTokenExpired } from "./index.ts";
+import { isTokenExpired } from "../_shared/musicService.ts";
 import { addTracksToPlaylist } from "../_shared/spotify.ts";
 
 Deno.test("isTokenExpired returns true when expires_at is in the past", () => {

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { env } from '@/lib/env';
+import { toMusicService } from '@/lib/serviceKey';
 import { supabase } from '@/lib/supabase';
 import { registerProfile } from '@/store/users';
 import type { ActivityItem, Playlist, Reaction, ServiceKey, Track } from '@/types';
@@ -363,7 +364,10 @@ export const usePlaylistsStore = defineStore('playlists', () => {
           Authorization: `Bearer ${sess.session.access_token}`,
           apikey: env.supabaseAnonKey,
         },
-        body: JSON.stringify({ playlist_id: playlistId, service }),
+        body: JSON.stringify({
+          playlist_id: playlistId,
+          service: toMusicService(service),
+        }),
       });
     } catch {
       // Non-fatal — callers redirect anyway and the user can retry from

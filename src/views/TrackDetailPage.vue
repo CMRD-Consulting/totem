@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Browser } from '@capacitor/browser';
 import { IonPage } from '@ionic/vue';
 import { computed } from 'vue';
 import AlbumArt from '@/components/AlbumArt.vue';
@@ -10,6 +11,7 @@ import ScreenScroll from '@/components/ScreenScroll.vue';
 import ServiceGlyph from '@/components/ServiceGlyph.vue';
 import TopBar from '@/components/TopBar.vue';
 import { SERVICES } from '@/data/mock';
+import { playUrlForService } from '@/lib/playUrl';
 import { state } from '@/store/state';
 import { usePlaylistsStore } from '@/stores/playlists';
 import { usersById } from '@/store/users';
@@ -33,6 +35,16 @@ const reactions = computed(
 );
 
 const services: ServiceKey[] = ['spotify', 'apple', 'youtube'];
+
+function openInService(service: ServiceKey) {
+  const url = playUrlForService(service, track.value.serviceIds ?? {});
+  if (!url) return;
+  Browser.open({ url });
+}
+
+function canOpenIn(service: ServiceKey): boolean {
+  return !!playUrlForService(service, track.value.serviceIds ?? {});
+}
 </script>
 
 <template>
@@ -123,11 +135,14 @@ const services: ServiceKey[] = ['spotify', 'apple', 'youtube'];
             }"
           >open in…</div>
           <button
-            v-for="s in services"
-            :key="s"
+            v-for="service in services"
+            :key="service"
+            type="button"
+            :disabled="!canOpenIn(service)"
+            @click="openInService(service)"
             :style="{
               all: 'unset',
-              cursor: 'pointer',
+              cursor: canOpenIn(service) ? 'pointer' : 'not-allowed',
               display: 'flex',
               alignItems: 'center',
               gap: '12px',
@@ -135,13 +150,14 @@ const services: ServiceKey[] = ['spotify', 'apple', 'youtube'];
               boxSizing: 'border-box',
               padding: '12px 14px',
               borderRadius: '12px',
-              background: track.service === s ? 'var(--ink)' : 'var(--surface)',
-              color: track.service === s ? 'var(--surface)' : 'var(--ink)',
-              border: track.service === s ? 'none' : '0.5px solid var(--divider)',
+              background: track.service === service ? 'var(--ink)' : 'var(--surface)',
+              color: track.service === service ? 'var(--surface)' : 'var(--ink)',
+              border: track.service === service ? 'none' : '0.5px solid var(--divider)',
               marginBottom: '8px',
+              opacity: canOpenIn(service) ? 1 : 0.45,
             }"
           >
-            <ServiceGlyph :service="s" :size="22" :color="SERVICES[s].color" />
+            <ServiceGlyph :service="service" :size="22" :color="SERVICES[service].color" />
             <div style="flex: 1">
               <div
                 :style="{
@@ -149,9 +165,9 @@ const services: ServiceKey[] = ['spotify', 'apple', 'youtube'];
                   fontWeight: 600,
                   fontSize: '14px',
                 }"
-              >{{ SERVICES[s].name }}</div>
+              >{{ SERVICES[service].name }}</div>
               <div
-                v-if="track.service === s"
+                v-if="track.service === service"
                 :style="{
                   fontFamily: 'Inter',
                   fontSize: '11px',
@@ -161,11 +177,20 @@ const services: ServiceKey[] = ['spotify', 'apple', 'youtube'];
                   fontWeight: 500,
                 }"
               >where {{ adder?.name }} added it from</div>
+              <div
+                v-else-if="!canOpenIn(service)"
+                :style="{
+                  fontFamily: 'Inter',
+                  fontSize: '11px',
+                  color: 'var(--muted)',
+                  marginTop: '1px',
+                }"
+              >not available on this service</div>
             </div>
             <Icon
               name="arrow-out"
               :size="16"
-              :color="track.service === s ? 'var(--surface)' : 'var(--muted)'"
+              :color="track.service === service ? 'var(--surface)' : 'var(--muted)'"
             />
           </button>
         </div>

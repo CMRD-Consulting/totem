@@ -27,9 +27,11 @@ import InvitePage from '@/views/InvitePage.vue';
 import MirrorPage from '@/views/MirrorPage.vue';
 import TrackDetailPage from '@/views/TrackDetailPage.vue';
 import { peekMusicClipboard, shortUrl } from '@/lib/musicUrl';
+import { fromMusicService, type MusicService } from '@/lib/serviceKey';
 import { pillBtn } from '@/components/pillBtn';
 import { SERVICES } from '@/data/mock';
 import { supabase } from '@/lib/supabase';
+import { useMirrorErrors } from '@/composables/useMirrorErrors';
 import { useRealtimePlaylist } from '@/composables/useRealtimePlaylist';
 import { useAuthStore } from '@/stores/auth';
 import { usePlaylistsStore } from '@/stores/playlists';
@@ -67,6 +69,11 @@ const mirrorOpen = ref(false);
 const trackOpenId = ref<string | null>(null);
 const reactionTrayTrackId = ref<string | null>(null);
 const myMirrors = ref<MyMirror[]>([]);
+const {
+  errorCount: mirrorErrorCount,
+  load: loadMirrorErrors,
+  mirrorErrorForTrack,
+} = useMirrorErrors(() => playlistId.value);
 
 function onReactionTrayPick(emoji: string) {
   const id = reactionTrayTrackId.value;
@@ -146,8 +153,8 @@ const primaryMirror = computed<MyMirror | null>(() => {
   const list = myMirrors.value;
   if (!list.length) return null;
   return (
-    list.find((m) => m.enabled && m.service === 'spotify') ||
-    list.find((m) => m.enabled) ||
+    list.find((mirror) => mirror.enabled && mirror.service === auth.preferredService) ||
+    list.find((mirror) => mirror.enabled) ||
     list[0]
   );
 });
@@ -174,7 +181,10 @@ async function loadMyMirrors() {
     myMirrors.value = [];
     return;
   }
-  myMirrors.value = (data ?? []) as MyMirror[];
+  myMirrors.value = (data ?? []).map((row) => ({
+    ...row,
+    service: fromMusicService(row.service as MusicService),
+  })) as MyMirror[];
 }
 
 onIonViewWillEnter(async () => {
@@ -183,6 +193,7 @@ onIonViewWillEnter(async () => {
     await Promise.all([
       playlists.loadTracks(playlistId.value).catch(() => {}),
       loadMyMirrors().catch(() => {}),
+      loadMirrorErrors().catch(() => {}),
     ]);
   }
 });
@@ -473,10 +484,23 @@ async function onActionPicked(ev: CustomEvent) {
                 color: 'var(--ink)',
               }"
             >
-              <template v-if="primaryMirror.last_sync_error">
+              <template v-if="primaryMirror.last_sync_error === 'reauth_required'">
+                <b>{{ SERVICES[primaryMirror.service].short }}</b> mirror
+                <span style="color: var(--accent); font-weight: 500">
+                  · reconnect in Settings
+                </span>
+              </template>
+              <template v-else-if="primaryMirror.last_sync_error">
                 <b>{{ SERVICES[primaryMirror.service].short }}</b> mirror
                 <span style="color: var(--accent); font-weight: 500">
                   · {{ primaryMirror.last_sync_error }}
+                </span>
+              </template>
+              <template v-else-if="mirrorErrorCount > 0">
+                <b>{{ SERVICES[primaryMirror.service].short }}</b> mirror
+                <span style="color: var(--muted); font-weight: 400">
+                  · {{ mirrorErrorCount }}
+                  {{ mirrorErrorCount === 1 ? 'track' : 'tracks' }} couldn't mirror
                 </span>
               </template>
               <template v-else-if="!primaryMirror.enabled">
@@ -586,11 +610,12 @@ async function onActionPicked(ev: CustomEvent) {
         <!-- Songs -->
         <template v-if="tab === 'songs'">
           <TrackRow
-            v-for="t in tracks"
-            :key="t.id"
-            :track="t"
-            @tap="trackOpenId = t.id"
-            @dismiss="playlists.dismissPending(playlist.id, t.id)"
+            v-for="track in tracks"
+            :key="track.id"
+            :track="track"
+            :mirror-error="mirrorErrorForTrack(track.id)"
+            @tap="trackOpenId = track.id"
+            @dismiss="playlists.dismissPending(playlist.id, track.id)"
             @open-reaction-picker="reactionTrayTrackId = $event"
           />
           <div

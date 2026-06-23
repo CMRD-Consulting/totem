@@ -1,14 +1,15 @@
+import {
+  appleTokenExpiry,
+  createDeveloperToken,
+  createLibraryPlaylist,
+  getStorefront,
+} from "../_shared/appleMusic.ts";
 import { supabaseAdmin, supabaseAsUser } from "../_shared/supabaseAdmin.ts";
 import { corsResponse, handlePreflight } from "../_shared/cors.ts";
-import { parseMusicService, type MusicService } from "../_shared/musicService.ts";
-import {
-  createNativePlaylist,
-  refreshConnectionToken,
-} from "../_shared/mirrorHelpers.ts";
 
 interface Payload {
-  playlist_id: string;
-  service: MusicService;
+  user_token: string;
+  playlist_id?: string;
 }
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -33,52 +34,37 @@ Deno.serve(async (req) => {
   } catch {
     return jsonResponse({ error: "invalid_body" }, 400);
   }
-  if (!payload.playlist_id || !payload.service) {
-    return jsonResponse({ error: "missing_fields" }, 400);
+  if (!payload.user_token?.trim()) {
+    return jsonResponse({ error: "missing_user_token" }, 400);
   }
-  const service = parseMusicService(payload.service);
-  if (!service) return jsonResponse({ error: "unsupported_service" }, 400);
 
   const userClient = supabaseAsUser(jwt);
   const { data: { user } } = await userClient.auth.getUser();
   if (!user) return jsonResponse({ error: "session_invalid" }, 401);
 
   const admin = supabaseAdmin();
+  const userToken = payload.user_token.trim();
+  const developerToken = await createDeveloperToken();
 
-  const { data: existing } = await admin
-    .from("mirror_targets")
-    .select("id, native_playlist_id")
-    .eq("user_id", user.id)
-    .eq("playlist_id", payload.playlist_id)
-    .eq("service", service)
-    .maybeSingle();
-  if (existing) {
-    return jsonResponse({
-      ok: true,
-      mirror_target_id: existing.id,
-      native_playlist_id: existing.native_playlist_id,
-      reused: true,
-    }, 200);
-  }
-
-  const { data: conn } = await admin
-    .from("service_connections")
-    .select("access_token, refresh_token, expires_at, service_user_id")
-    .eq("user_id", user.id)
-    .eq("service", service)
-    .maybeSingle();
-  if (!conn) {
-    return jsonResponse({ error: "no_connection" }, 400);
-  }
-
-  let accessToken: string;
+  let storefront: string;
   try {
-    accessToken = await refreshConnectionToken(admin, user.id, service, conn);
+    storefront = await getStorefront(developerToken, userToken);
   } catch (err) {
-    return jsonResponse({
-      error: "refresh_failed",
-      message: (err as Error).message,
-    }, 502);
+    return jsonResponse({ error: "apple_profile_failed", message: (err as Error).message }, 502);
+  }
+
+  await admin.from("service_connections").upsert({
+    user_id: user.id,
+    service: "apple_music",
+    access_token: userToken,
+    refresh_token: null,
+    expires_at: appleTokenExpiry(),
+    service_user_id: storefront,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "user_id,service" });
+
+  if (!payload.playlist_id) {
+    return jsonResponse({ ok: true, service_user_id: storefront }, 200);
   }
 
   const { data: playlistRow } = await userClient
@@ -90,19 +76,32 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "playlist_not_found" }, 404);
   }
 
+  const { data: existing } = await admin
+    .from("mirror_targets")
+    .select("id, native_playlist_id")
+    .eq("user_id", user.id)
+    .eq("playlist_id", payload.playlist_id)
+    .eq("service", "apple_music")
+    .maybeSingle();
+  if (existing) {
+    return jsonResponse({
+      ok: true,
+      mirror_target_id: existing.id,
+      native_playlist_id: existing.native_playlist_id,
+      reused: true,
+    }, 200);
+  }
+
   let nativePlaylist: { id: string };
   try {
-    nativePlaylist = await createNativePlaylist(
-      service,
-      accessToken,
-      conn.service_user_id,
+    nativePlaylist = await createLibraryPlaylist(
+      developerToken,
+      userToken,
       `Totem: ${playlistRow.name}`,
       playlistRow.description ?? "Mirrored from Totem",
     );
   } catch (err) {
-    const msg = (err as Error).message;
-    console.error("createNativePlaylist failed", msg);
-    return jsonResponse({ error: "create_failed", message: msg }, 502);
+    return jsonResponse({ error: "create_failed", message: (err as Error).message }, 502);
   }
 
   const { data: target, error: insErr } = await admin
@@ -110,16 +109,13 @@ Deno.serve(async (req) => {
     .insert({
       user_id: user.id,
       playlist_id: payload.playlist_id,
-      service,
+      service: "apple_music",
       native_playlist_id: nativePlaylist.id,
     })
     .select("id, native_playlist_id")
     .single();
   if (insErr || !target) {
-    return jsonResponse({
-      error: "insert_failed",
-      message: insErr?.message ?? "unknown",
-    }, 500);
+    return jsonResponse({ error: "insert_failed", message: insErr?.message ?? "unknown" }, 500);
   }
 
   return jsonResponse({

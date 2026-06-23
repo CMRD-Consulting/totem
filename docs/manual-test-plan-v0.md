@@ -71,5 +71,5 @@ both with Spotify Premium accounts, both signed in to different Apple IDs.
         track row appears in Totem but does NOT mirror to Spotify; check
         `mirror_track_errors` row in Supabase Studio shows
         `track_not_on_spotify`.
-22. [ ] Tap the Apple Music or YouTube Music tile in mirror settings →
-        nothing happens (disabled, "coming in v1" status).
+22. [ ] Tap the Apple Music or YouTube Music tile in mirror settings when not
+        connected → Settings opens for one-time connect, then mirror works.

@@ -7,7 +7,9 @@ import ToggleRow from '@/components/ToggleRow.vue';
 import Wordmark from '@/components/Wordmark.vue';
 import { pillBtn } from '@/components/pillBtn';
 import { SERVICES } from '@/data/mock';
+import { toMusicService } from '@/lib/serviceKey';
 import { supabase } from '@/lib/supabase';
+import { useAuthStore } from '@/stores/auth';
 import { usePlaylistsStore } from '@/stores/playlists';
 import type { ServiceKey } from '@/types';
 
@@ -21,15 +23,14 @@ interface Preview {
 const router = useRouter();
 const route = useRoute();
 const playlists = usePlaylistsStore();
+const auth = useAuthStore();
 
 type Status = 'loading' | 'preview' | 'joining' | 'error';
 const status = ref<Status>('loading');
 const preview = ref<Preview | null>(null);
 const error = ref<string | null>(null);
 
-// Mirror toggle state. v0 only mirrors to Spotify; once Apple/YouTube ship,
-// this reads `auth.preferredService` and the toggle label updates accordingly.
-const mirrorService: ServiceKey = 'spotify';
+const mirrorService = computed(() => auth.preferredService);
 const mirrorConnected = ref(false);
 const mirrorOn = ref(false);
 
@@ -38,7 +39,7 @@ const token = route.params.token as string;
 const toggleSublabel = computed(() =>
   mirrorConnected.value
     ? 'new tracks sync to your account'
-    : `connect ${SERVICES[mirrorService].short} in Settings to enable`,
+    : `connect ${SERVICES[mirrorService.value].short} in Settings to enable`,
 );
 
 onMounted(async () => {
@@ -71,7 +72,7 @@ async function checkConnection() {
   const { data } = await supabase
     .from('service_connections')
     .select('service')
-    .eq('service', mirrorService)
+    .eq('service', toMusicService(mirrorService.value))
     .maybeSingle();
   mirrorConnected.value = !!data;
 }
@@ -87,7 +88,7 @@ async function onJoin() {
     // it up on first load — otherwise the banner pops in a beat late and the
     // "auto-mirror" UX feels broken.
     if (mirrorOn.value && mirrorConnected.value) {
-      await playlists.ensureMirrorTarget(result.playlist_id, mirrorService);
+      await playlists.ensureMirrorTarget(result.playlist_id, mirrorService.value);
     }
     router.replace(`/p/${result.playlist_id}`);
   } catch (e) {

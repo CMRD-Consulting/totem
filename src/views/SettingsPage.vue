@@ -7,8 +7,6 @@ import {
   alertController,
   useIonRouter,
 } from '@ionic/vue';
-import { Browser } from '@capacitor/browser';
-import { Capacitor } from '@capacitor/core';
 import { computed, onMounted, ref, watch } from 'vue';
 import Icon from '@/components/Icon.vue';
 import IconButton from '@/components/IconButton.vue';
@@ -17,7 +15,8 @@ import ServiceGlyph from '@/components/ServiceGlyph.vue';
 import TopBar from '@/components/TopBar.vue';
 import { pillBtn } from '@/components/pillBtn';
 import { SERVICES } from '@/data/mock';
-import { env } from '@/lib/env';
+import { connectOAuthService } from '@/lib/connectService';
+import { fromMusicService, toMusicService, type MusicService } from '@/lib/serviceKey';
 import { supabase } from '@/lib/supabase';
 import { state } from '@/store/state';
 import { useAuthStore } from '@/stores/auth';
@@ -46,11 +45,21 @@ const themes: { key: ThemeKey; label: string; sub: string }[] = [
   { key: 'cream', label: 'cream', sub: 'crisp light' },
 ];
 
+const SERVICE_KEYS: ServiceKey[] = ['spotify', 'apple', 'youtube'];
+
 async function loadConnections() {
   const { data } = await supabase
     .from('service_connections')
     .select('service, service_user_id, updated_at');
-  connections.value = (data ?? []) as Connection[];
+  connections.value = (data ?? []).map((row) => ({
+    service: fromMusicService(row.service as MusicService),
+    service_user_id: row.service_user_id,
+    updated_at: row.updated_at,
+  }));
+}
+
+function isConnected(service: ServiceKey): boolean {
+  return connections.value.some((connection) => connection.service === service);
 }
 
 // onMounted (not onIonViewWillEnter) because Settings is now hosted inside an
@@ -103,87 +112,79 @@ function pickTheme(t: ThemeKey) {
   state.theme = t;
 }
 
-const spotifyConnected = computed(() =>
-  connections.value.some((c) => c.service === 'spotify'),
-);
-
-// Connection-only OAuth: omit playlist_id so the callback writes
-// service_connections only (no mirror_target). After completion, future
-// per-playlist mirroring can reuse the stored tokens directly.
-// Backfill: after the user connects Spotify, surface a button to mirror all
-// the playlists they're already a member of (which existed before the
-// connection and so don't have mirror_target rows yet). Computed against
-// service_connections + playlist_members + mirror_targets via RLS reads.
-const playlistsToBackfill = ref<string[]>([]);
+const playlistsToBackfill = ref(0);
 const backfilling = ref(false);
 const backfillProgress = ref(0);
 
 async function refreshBackfillList() {
-  if (!spotifyConnected.value) {
-    playlistsToBackfill.value = [];
+  const connected = SERVICE_KEYS.filter((service) => isConnected(service));
+  if (!connected.length) {
+    playlistsToBackfill.value = 0;
     return;
   }
-  // RLS scopes both reads to the current user — no user_id filter needed.
   const [{ data: memberships }, { data: existing }] = await Promise.all([
     supabase.from('playlist_members').select('playlist_id'),
-    supabase.from('mirror_targets').select('playlist_id').eq('service', 'spotify'),
+    supabase.from('mirror_targets').select('playlist_id, service'),
   ]);
-  const mirrored = new Set((existing ?? []).map((m) => m.playlist_id));
-  const memberIds = (memberships ?? []).map((m) => m.playlist_id);
-  playlistsToBackfill.value = memberIds.filter((id) => !mirrored.has(id));
+  const memberIds = new Set((memberships ?? []).map((membership) => membership.playlist_id));
+  let pending = 0;
+  for (const service of connected) {
+    const dbService = toMusicService(service);
+    const mirrored = new Set(
+      (existing ?? [])
+        .filter((target) => target.service === dbService)
+        .map((target) => target.playlist_id),
+    );
+    pending += [...memberIds].filter((playlistId) => !mirrored.has(playlistId)).length;
+  }
+  playlistsToBackfill.value = pending;
 }
 
 watch(
-  spotifyConnected,
-  (connected) => {
-    if (connected) refreshBackfillList();
-    else playlistsToBackfill.value = [];
+  connections,
+  () => {
+    refreshBackfillList();
   },
-  { immediate: true },
+  { immediate: true, deep: true },
 );
 
 async function runBackfill() {
-  if (backfilling.value || playlistsToBackfill.value.length === 0) return;
+  if (backfilling.value || playlistsToBackfill.value === 0) return;
   backfilling.value = true;
   backfillProgress.value = 0;
   error.value = null;
-  // Sequential, not parallel: this is a one-shot setup, latency is fine, and
-  // we don't want to fan out N concurrent Spotify createPlaylist calls.
-  for (const playlistId of playlistsToBackfill.value) {
-    await playlists.ensureMirrorTarget(playlistId, 'spotify');
-    backfillProgress.value++;
+  const connected = SERVICE_KEYS.filter((service) => isConnected(service));
+  const [{ data: memberships }, { data: existing }] = await Promise.all([
+    supabase.from('playlist_members').select('playlist_id'),
+    supabase.from('mirror_targets').select('playlist_id, service'),
+  ]);
+  const memberIds = (memberships ?? []).map((membership) => membership.playlist_id);
+  for (const service of connected) {
+    const dbService = toMusicService(service);
+    const mirrored = new Set(
+      (existing ?? [])
+        .filter((target) => target.service === dbService)
+        .map((target) => target.playlist_id),
+    );
+    for (const playlistId of memberIds) {
+      if (mirrored.has(playlistId)) continue;
+      await playlists.ensureMirrorTarget(playlistId, service);
+      backfillProgress.value++;
+    }
   }
   await refreshBackfillList();
   backfilling.value = false;
 }
 
-async function connectSpotify() {
+async function connectService(service: ServiceKey) {
   error.value = null;
-  const { data: sess } = await supabase.auth.getSession();
-  if (!sess.session) {
-    error.value = 'Not signed in';
-    return;
-  }
-  const url =
-    `${env.supabaseUrl}/functions/v1/oauth-start` +
-    `?jwt=${encodeURIComponent(sess.session.access_token)}`;
-
-  if (Capacitor.isNativePlatform()) {
-    const sub = await Browser.addListener('browserFinished', async () => {
-      await sub.remove();
-      await loadConnections();
+  try {
+    await connectOAuthService(service, {
+      onComplete: loadConnections,
     });
-    await Browser.open({ url });
-  } else {
-    const popup = window.open(url, '_blank');
-    if (popup) {
-      const interval = window.setInterval(() => {
-        if (popup.closed) {
-          window.clearInterval(interval);
-          loadConnections();
-        }
-      }, 800);
-    }
+    await refreshBackfillList();
+  } catch (connectError) {
+    error.value = (connectError as Error).message;
   }
 }
 
@@ -391,8 +392,10 @@ function relTime(iso: string | null): string {
         <SectionHeader :style-override="{ marginTop: '24px' }">connected services</SectionHeader>
         <div style="padding: 0 22px">
           <button
-            v-if="!spotifyConnected"
-            @click="connectSpotify"
+            v-for="service in SERVICE_KEYS"
+            :key="service"
+            v-show="!isConnected(service)"
+            @click="connectService(service)"
             :style="{
               all: 'unset',
               cursor: 'pointer',
@@ -408,7 +411,7 @@ function relTime(iso: string | null): string {
               marginBottom: '8px',
             }"
           >
-            <ServiceGlyph service="spotify" :size="22" :color="SERVICES.spotify.color" />
+            <ServiceGlyph :service="service" :size="22" :color="SERVICES[service].color" />
             <div style="flex: 1; text-align: left">
               <div
                 :style="{
@@ -417,7 +420,7 @@ function relTime(iso: string | null): string {
                   fontSize: '14px',
                   color: 'var(--ink)',
                 }"
-              >Connect Spotify</div>
+              >Connect {{ SERVICES[service].name }}</div>
               <div
                 :style="{
                   fontFamily: 'Inter',
@@ -429,23 +432,9 @@ function relTime(iso: string | null): string {
             </div>
             <Icon name="chevron" :size="14" color="var(--muted-2)" />
           </button>
-          <div
-            v-if="!spotifyConnected"
-            :style="{
-              fontFamily: 'Inter',
-              fontSize: '11.5px',
-              color: 'var(--muted-2)',
-              padding: '4px 4px 8px',
-              lineHeight: 1.4,
-            }"
-          >
-            Apple Music and YouTube Music are coming in v1.
-          </div>
 
-          <!-- Backfill: only shows when Spotify is connected AND there are
-               playlists the user is in that don't yet have a mirror_target. -->
           <button
-            v-if="spotifyConnected && playlistsToBackfill.length > 0"
+            v-if="playlistsToBackfill > 0"
             @click="runBackfill"
             :disabled="backfilling"
             :style="{
@@ -471,10 +460,10 @@ function relTime(iso: string | null): string {
             >
               {{
                 backfilling
-                  ? `mirroring ${backfillProgress} of ${playlistsToBackfill.length}…`
-                  : `Mirror ${playlistsToBackfill.length} existing ${
-                      playlistsToBackfill.length === 1 ? 'playlist' : 'playlists'
-                    } to Spotify`
+                  ? `mirroring ${backfillProgress} of ${playlistsToBackfill}…`
+                  : `Mirror ${playlistsToBackfill} existing ${
+                      playlistsToBackfill === 1 ? 'playlist' : 'playlists'
+                    } to connected services`
               }}
             </div>
             <div
@@ -578,7 +567,7 @@ function relTime(iso: string | null): string {
             lineHeight: 1.5,
           }"
         >
-          totem v0
+          totem v1
         </div>
       </ion-content>
     </div>

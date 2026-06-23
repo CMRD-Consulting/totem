@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import type { User } from '@supabase/supabase-js';
+import { fromMusicService, toMusicService, type MusicService } from '@/lib/serviceKey';
 import { supabase } from '@/lib/supabase';
 import { registerProfile } from '@/store/users';
 import type { ServiceKey } from '@/types';
@@ -26,7 +27,12 @@ export const useAuthStore = defineStore('auth', () => {
       .select('display_name, preferred_service')
       .eq('id', user.value.id)
       .maybeSingle();
-    profile.value = (data as Profile | null) ?? null;
+    profile.value = data
+      ? {
+          display_name: data.display_name,
+          preferred_service: fromMusicService(data.preferred_service as MusicService),
+        }
+      : null;
     // Mirror into the usersById cache so consumers (members tab, avatars,
     // activity feed) read consistent data — otherwise loadProfile and
     // loadList compete and whichever runs last wins.
@@ -39,7 +45,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (!user.value) return;
     const { error } = await supabase
       .from('profiles')
-      .update({ preferred_service: service })
+      .update({ preferred_service: toMusicService(service) })
       .eq('id', user.value.id);
     if (error) throw error;
     if (profile.value) profile.value = { ...profile.value, preferred_service: service };

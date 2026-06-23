@@ -5,6 +5,7 @@ import ScreenScroll from "@/components/ScreenScroll.vue";
 import ServiceGlyph from "@/components/ServiceGlyph.vue";
 import TopBar from "@/components/TopBar.vue";
 import { SERVICES } from "@/data/mock";
+import { fromMusicService, type MusicService } from "@/lib/serviceKey";
 import { supabase } from "@/lib/supabase";
 import { usePlaylistsStore } from "@/stores/playlists";
 import type { ServiceKey } from "@/types";
@@ -39,9 +40,8 @@ const playlist = computed(
     playlists.playlists[0],
 );
 
-const v0Implemented: ServiceKey[] = ["spotify"];
-function isImplemented(k: ServiceKey) {
-  return v0Implemented.includes(k);
+function isImplemented(_key: ServiceKey) {
+  return true;
 }
 
 function relSync(iso: string | null): string {
@@ -59,10 +59,12 @@ function relSync(iso: string | null): string {
 function statusLabel(k: ServiceKey): string {
   const t = targets.value[k];
   if (!t) {
-    if (!isImplemented(k)) return "coming in v1";
     return connectedServices.value.has(k)
       ? "tap to mirror"
       : `connect ${SERVICES[k].short} in Settings first`;
+  }
+  if (t.last_sync_error === "reauth_required") {
+    return "reconnect in Settings";
   }
   if (t.last_sync_error) return `error: ${t.last_sync_error}`;
   if (!t.enabled) return "disabled — tap to re-enable";
@@ -80,7 +82,10 @@ async function loadTargets() {
     return;
   }
   targets.value = Object.fromEntries(
-    (data ?? []).map((t) => [t.service, t as MirrorTarget]),
+    (data ?? []).map((target) => [
+      fromMusicService(target.service as MusicService),
+      { ...target, service: fromMusicService(target.service as MusicService) } as MirrorTarget,
+    ]),
   );
 }
 
@@ -89,7 +94,7 @@ async function loadConnections() {
     .from("service_connections")
     .select("service");
   connectedServices.value = new Set(
-    (data ?? []).map((c) => c.service as ServiceKey),
+    (data ?? []).map((connection) => fromMusicService(connection.service as MusicService)),
   );
 }
 
@@ -338,8 +343,6 @@ onMounted(async () => {
           Totem isn't a player. Tracks always open in the service of your
           choice. Mirroring is a courtesy copy — you keep ownership of the
           playlist on your end.
-          <br /><br />
-          v0 mirrors to Spotify only; Apple Music and YouTube Music are coming.
         </div>
       </ScreenScroll>
     </div>

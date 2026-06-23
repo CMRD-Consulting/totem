@@ -1,36 +1,29 @@
-// Spotify OAuth callback — exchanges code, creates a mirror playlist on Spotify,
-// persists tokens + mirror_target. Returns a small HTML page that closes the
-// in-app browser when running inside Capacitor.
-
-import { exchangeCode, getCurrentUser, createPlaylist } from "../_shared/spotify.ts";
+import { exchangeCode as exchangeSpotifyCode, getCurrentUser as getSpotifyUser, createPlaylist as createSpotifyPlaylist } from "../_shared/spotify.ts";
+import { exchangeCode as exchangeYouTubeCode, getCurrentChannel, createPlaylist as createYouTubePlaylist } from "../_shared/youtube.ts";
 import { supabaseAsUser, supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 import { corsResponse, handlePreflight } from "../_shared/cors.ts";
 import { OAUTH_STATE_MAX_AGE_MS } from "../_shared/oauthState.ts";
+import { parseMusicService, type MusicService } from "../_shared/musicService.ts";
 
-/** Look up a state row by token, enforcing the freshness window. The row is
- * deleted as a side effect — state tokens are single-use, so even if the
- * caller's flow fails after this point the token can't be replayed. */
 export async function consumeStateToken(
   admin: ReturnType<typeof supabaseAdmin>,
   stateToken: string,
-): Promise<{ jwt: string; playlist_id: string | null } | null> {
+): Promise<{ jwt: string; playlist_id: string | null; service: MusicService } | null> {
   const { data: row } = await admin
     .from("oauth_states")
-    .select("jwt, playlist_id, created_at")
+    .select("jwt, playlist_id, service, created_at")
     .eq("state_token", stateToken)
     .maybeSingle();
   if (!row) return null;
-  // Best-effort delete — if it fails (e.g. row already gone), proceed
-  // anyway. The created_at check below is the authoritative freshness gate.
   await admin.from("oauth_states").delete().eq("state_token", stateToken);
   const age = Date.now() - new Date(row.created_at).getTime();
   if (age > OAUTH_STATE_MAX_AGE_MS) return null;
-  return { jwt: row.jwt, playlist_id: row.playlist_id };
+  const service = parseMusicService(row.service) ?? "spotify";
+  return { jwt: row.jwt, playlist_id: row.playlist_id, service };
 }
 
-const REQUIRED_SCOPES = ["playlist-modify-private", "playlist-modify-public"];
+const SPOTIFY_REQUIRED_SCOPES = ["playlist-modify-private", "playlist-modify-public"];
 
-/** Build a small HTML page the in-app browser can render. */
 function htmlPage(opts: { title: string; body: string; close?: boolean }): Response {
   return corsResponse(
     `<!doctype html><html><body style="font-family: -apple-system, sans-serif; padding: 40px; text-align: center; max-width: 480px; margin: 0 auto; line-height: 1.5;">
@@ -42,6 +35,11 @@ function htmlPage(opts: { title: string; body: string; close?: boolean }): Respo
   );
 }
 
+function serviceLabel(service: MusicService): string {
+  if (service === "youtube_music") return "YouTube Music";
+  return "Spotify";
+}
+
 Deno.serve(async (req) => {
   const preflight = handlePreflight(req);
   if (preflight) return preflight;
@@ -49,12 +47,11 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
-  // Spotify can hand us an error directly via ?error= when the user denies.
   const userDenied = url.searchParams.get("error");
   if (userDenied) {
     return htmlPage({
       title: "Mirror not connected",
-      body: `Spotify reported "${userDenied}". You can close this window and try again.`,
+      body: `The provider reported "${userDenied}". You can close this window and try again.`,
     });
   }
   if (!code || !state) return corsResponse("Missing code or state", { status: 400 });
@@ -64,51 +61,58 @@ Deno.serve(async (req) => {
   if (!resolved) {
     return htmlPage({
       title: "OAuth state expired",
-      body: "The Spotify sign-in link is no longer valid (single-use, 10 minute window). Start the connect flow again from the app.",
+      body: "The sign-in link is no longer valid (single-use, 10 minute window). Start the connect flow again from the app.",
     });
   }
-  const playlist_id: string | undefined = resolved.playlist_id ?? undefined;
-  const jwt = resolved.jwt;
 
+  const { jwt, playlist_id, service } = resolved;
+  const label = serviceLabel(service);
   const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/oauth-callback`;
 
-  // Step 1: code → tokens.
-  let tokens;
+  let tokens: { access_token: string; refresh_token?: string; expires_in: number; scope?: string };
   try {
-    tokens = await exchangeCode(code, redirectUri);
+    tokens = service === "youtube_music"
+      ? await exchangeYouTubeCode(code, redirectUri)
+      : await exchangeSpotifyCode(code, redirectUri);
   } catch (err) {
-    console.error("exchangeCode failed", err);
+    console.error("token exchange failed", err);
     return htmlPage({
-      title: "Couldn't finish Spotify sign-in",
+      title: `Couldn't finish ${label} sign-in`,
       body: `Token exchange failed: ${(err as Error).message}.`,
     });
   }
 
-  // Step 2: verify the granted scopes include what we need to write playlists.
-  // Spotify quietly downgrades scopes when the user doesn't grant all requested.
-  const granted = (tokens.scope ?? "").split(/\s+/).filter(Boolean);
-  const missing = REQUIRED_SCOPES.filter((s) => !granted.includes(s));
-  if (missing.length > 0) {
-    return htmlPage({
-      title: "Mirror needs more permission",
-      body: `Spotify didn't grant: <code>${missing.join(", ")}</code>. ` +
-        `Try the connect flow again and approve the playlist-modify scope.`,
-    });
+  if (service === "spotify") {
+    const granted = (tokens.scope ?? "").split(/\s+/).filter(Boolean);
+    const missing = SPOTIFY_REQUIRED_SCOPES.filter((scope) => !granted.includes(scope));
+    if (missing.length > 0) {
+      return htmlPage({
+        title: "Mirror needs more permission",
+        body: `Spotify didn't grant: <code>${missing.join(", ")}</code>. Try again and approve playlist-modify.`,
+      });
+    }
   }
 
-  // Step 3: who is this Spotify user?
-  let spotifyUser;
+  let serviceUserId: string;
+  let serviceUserLabel: string;
   try {
-    spotifyUser = await getCurrentUser(tokens.access_token);
+    if (service === "youtube_music") {
+      const channel = await getCurrentChannel(tokens.access_token);
+      serviceUserId = channel.id;
+      serviceUserLabel = channel.title;
+    } else {
+      const spotifyUser = await getSpotifyUser(tokens.access_token);
+      serviceUserId = spotifyUser.id;
+      serviceUserLabel = spotifyUser.display_name ?? spotifyUser.id;
+    }
   } catch (err) {
-    console.error("getCurrentUser failed", err);
+    console.error("profile read failed", err);
     return htmlPage({
-      title: "Couldn't read your Spotify profile",
+      title: `Couldn't read your ${label} profile`,
       body: (err as Error).message,
     });
   }
 
-  // Step 4: confirm the Totem playlist exists + the user can see it.
   const userClient = supabaseAsUser(jwt);
   const { data: { user } } = await userClient.auth.getUser();
   if (!user) {
@@ -118,34 +122,25 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Always persist the OAuth tokens — both the per-playlist (Mirror page) and
-  // connection-only (Settings "Connect Spotify") flows want this row.
-  // admin client was already created above for consumeStateToken.
   const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
-
   await admin.from("service_connections").upsert({
     user_id: user.id,
-    service: "spotify",
+    service,
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token ?? null,
     expires_at: expiresAt,
-    service_user_id: spotifyUser.id,
+    service_user_id: serviceUserId,
     updated_at: new Date().toISOString(),
   }, { onConflict: "user_id,service" });
 
-  // Connection-only flow: no playlist_id in state means the user is just
-  // setting up Spotify in Settings. Stop here — no native playlist, no
-  // mirror_target. Future mirror creation reuses these tokens directly.
   if (!playlist_id) {
     return htmlPage({
-      title: "Spotify connected",
-      body:
-        `You're connected as <b>${spotifyUser.id}</b>. New playlists you join can now mirror to your Spotify automatically.`,
+      title: `${label} connected`,
+      body: `You're connected as <b>${serviceUserLabel}</b>. New playlists you join can now mirror automatically.`,
       close: true,
     });
   }
 
-  // Per-playlist flow: create the native Spotify playlist + mirror_target row.
   const { data: playlistRow } = await userClient
     .from("playlists")
     .select("id, name, description")
@@ -158,33 +153,23 @@ Deno.serve(async (req) => {
     });
   }
 
-  let spotifyPlaylist;
+  let nativePlaylist: { id: string };
   try {
-    spotifyPlaylist = await createPlaylist(
-      tokens.access_token,
-      spotifyUser.id,
-      `Totem: ${playlistRow.name}`,
-      playlistRow.description ?? "Mirrored from Totem",
-    );
+    nativePlaylist = service === "youtube_music"
+      ? await createYouTubePlaylist(
+        tokens.access_token,
+        `Totem: ${playlistRow.name}`,
+        playlistRow.description ?? "Mirrored from Totem",
+      )
+      : await createSpotifyPlaylist(
+        tokens.access_token,
+        serviceUserId,
+        `Totem: ${playlistRow.name}`,
+        playlistRow.description ?? "Mirrored from Totem",
+      );
   } catch (err) {
     const msg = (err as Error).message;
     console.error("createPlaylist failed", msg);
-    // Spotify returns 403 from createPlaylist for two common reasons:
-    //   1. The Spotify app is in Development Mode and this user isn't on
-    //      the Users-and-Access allowlist. Most likely cause for new apps.
-    //   2. The token genuinely lacks playlist-modify scope (caught above).
-    if (msg.includes("403")) {
-      return htmlPage({
-        title: "Spotify rejected the request",
-        body:
-          "Spotify returned 403 Forbidden. The most common cause is " +
-          "<b>Development Mode restriction</b> — open developer.spotify.com → " +
-          "your app → Users and Access, and add this Spotify account's email." +
-          `<br><br><pre style="text-align: left; background: #f4f4f4; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 11px; line-height: 1.4;">${
-            JSON.stringify(spotifyUser, null, 2)
-          }</pre>`,
-      });
-    }
     return htmlPage({
       title: "Couldn't create mirror playlist",
       body: msg,
@@ -193,20 +178,14 @@ Deno.serve(async (req) => {
 
   await admin.from("mirror_targets").insert({
     user_id: user.id,
-    playlist_id: playlist_id,
-    service: "spotify",
-    native_playlist_id: spotifyPlaylist.id,
+    playlist_id,
+    service,
+    native_playlist_id: nativePlaylist.id,
   });
 
-  // v0 limitation: existing playlist tracks are not backfilled into the new
-  // Spotify mirror — only future inserts will sync via the trigger.
   return htmlPage({
     title: "Mirror connected",
-    body:
-      `New tracks added by anyone in <b>${playlistRow.name}</b> will now appear in your Spotify.` +
-      `<br><br><pre style="text-align: left; background: #f4f4f4; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 11px; line-height: 1.4;">${
-        JSON.stringify(spotifyUser, null, 2)
-      }</pre>`,
+    body: `New tracks added to <b>${playlistRow.name}</b> will now appear in your ${label}.`,
     close: true,
   });
 });

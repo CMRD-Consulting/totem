@@ -9,6 +9,7 @@ import ToggleRow from '@/components/ToggleRow.vue';
 import TopBar from '@/components/TopBar.vue';
 import { pillBtn } from '@/components/pillBtn';
 import { SERVICES } from '@/data/mock';
+import { toMusicService } from '@/lib/serviceKey';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth';
 import { usePlaylistsStore } from '@/stores/playlists';
@@ -34,23 +35,23 @@ const hues: [number, number, number] = [16, 200, 60];
 const busy = ref(false);
 const error = ref<string | null>(null);
 
-// Mirror toggle — defaults ON if the user has Spotify connected, OFF + disabled
-// if not. Same pattern as JoinPage. v0 only mirrors to Spotify.
-const mirrorService: ServiceKey = 'spotify';
+// Mirror toggle — defaults ON if the user's preferred service is connected.
+const mirrorService = computed(() => auth.preferredService);
 const mirrorConnected = ref(false);
 const mirrorOn = ref(false);
 
 const mirrorSublabel = computed(() =>
   mirrorConnected.value
     ? 'new tracks sync to your account'
-    : `connect ${SERVICES[mirrorService].short} in Settings to enable`,
+    : `connect ${SERVICES[mirrorService.value].short} in Settings to enable`,
 );
 
 onMounted(async () => {
+  await auth.loadProfile();
   const { data } = await supabase
     .from('service_connections')
     .select('service')
-    .eq('service', mirrorService)
+    .eq('service', toMusicService(mirrorService.value))
     .maybeSingle();
   mirrorConnected.value = !!data;
   mirrorOn.value = mirrorConnected.value;
@@ -85,7 +86,7 @@ async function onCreate() {
       // Await mirror creation BEFORE navigating so the playlist's mirror
       // banner is populated on first render, not flickering in late.
       if (mirrorOn.value && mirrorConnected.value) {
-        await playlists.ensureMirrorTarget(created.id, mirrorService);
+        await playlists.ensureMirrorTarget(created.id, mirrorService.value);
       }
       // Route guard dismisses the modal as part of this navigation.
       ionRouter.navigate(`/p/${created.id}`, 'forward', 'push');
@@ -127,7 +128,7 @@ async function onJoin() {
     const result = await playlists.joinByToken(token);
     if (result?.playlist_id) {
       if (mirrorOn.value && mirrorConnected.value) {
-        await playlists.ensureMirrorTarget(result.playlist_id, mirrorService);
+        await playlists.ensureMirrorTarget(result.playlist_id, mirrorService.value);
       }
       ionRouter.navigate(`/p/${result.playlist_id}`, 'forward', 'push');
     } else {
