@@ -1,0 +1,22 @@
+# Netlify build configuration for the Totem web (PWA) deploy.
+# Capacitor-wrapped native builds happen separately via Xcode; Netlify only
+# serves the Vite-built SPA out of dist/.
+
+[build]
+  command = "pnpm build"
+  publish = "dist"
+
+# Pin a Node version that matches the project's .nvmrc and the lockfile's
+# engine assumptions. Bumping this requires re-testing the build locally.
+[build.environment]
+  NODE_VERSION = "20"
+  NPM_FLAGS = "--prefix=/dev/null" # neuter implicit npm install; pnpm handles it
+
+# Vue Router uses history mode (createWebHistory in src/router/index.ts), so
+# every deep-link path (/p/<id>, /add-from-share, /i/<token>, …) must serve
+# index.html and let the client-side router pick the route. Without this,
+# any direct navigation or refresh produces a 404 from Netlify's CDN.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
